@@ -1,7 +1,8 @@
-<h1 align="center">
-  <img src="assets/greenboy.png" alt="GreenBoy" width="180">
-  <br><b>GreenBoy</b><br>
-</h1>
+<p align="center">
+  <img src="assets/greenboy-banner.png" alt="GreenBoy" width="460">
+</p>
+
+<h1 align="center">GreenBoy</h1>
 
 <h4 align="center">A native PC build of your own copy of the game. No emulator. Tuned and measured on the Steam Deck.</h4>
 
