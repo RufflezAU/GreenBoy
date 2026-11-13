@@ -145,12 +145,12 @@ EOF
 
 # ---- the AppDir's own files ----
 cp builder/linux/AppRun "$APPDIR/AppRun"
-cp builder/linux/hookshot-builder.desktop "$APPDIR/"
+cp builder/linux/greenboy-builder.desktop "$APPDIR/"
 # (RecompLauncher reads this from inside the AppImage, at /recomplauncher.json)
 cp recomplauncher.json "$APPDIR/recomplauncher.json"
-cp assets/hookshot.png "$APPDIR/hookshot.png"
+cp assets/greenboy.png "$APPDIR/greenboy.png"
 mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-cp assets/hookshot.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/hookshot.png"
+cp assets/greenboy.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/greenboy.png"
 
 # (the update list, beside AppRun and not inside a hashed part: hookshot-linux.txt names each part's checksum)
 # (the parts are served from the linux-parts release of the repository this is built in, where

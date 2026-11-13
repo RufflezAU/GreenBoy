@@ -32,7 +32,7 @@
             </Ellipse.Fill>
             <Ellipse.RenderTransform><ScaleTransform x:Name="HaloScale"/></Ellipse.RenderTransform>
           </Ellipse>
-          <Image Source="pack://application:,,,/Images/hookshot.png" Width="178" RenderTransformOrigin="0.5,0.5" RenderOptions.BitmapScalingMode="HighQuality">
+          <Image Source="pack://application:,,,/Images/greenboy.png" Width="178" RenderTransformOrigin="0.5,0.5" RenderOptions.BitmapScalingMode="HighQuality">
             <Image.RenderTransform>
               <TransformGroup>
                 <RotateTransform x:Name="BobTurn"/>
@@ -69,7 +69,7 @@
 
       <!-- the head: the hookshot, and the steps (or the update's versions) -->
       <StackPanel Orientation="Horizontal" Margin="28,0,0,0" VerticalAlignment="Center">
-        <Image Source="pack://application:,,,/Images/hookshot.png" Width="28" RenderOptions.BitmapScalingMode="HighQuality">
+        <Image Source="pack://application:,,,/Images/greenboy.png" Width="28" RenderOptions.BitmapScalingMode="HighQuality">
           <Image.Effect><DropShadowEffect BlurRadius="6" ShadowDepth="2" Direction="270" Opacity="0.5" Color="Black"/></Image.Effect>
         </Image>
         <TextBlock Text="Hookshot" FontSize="15" FontWeight="Bold" Margin="10,0,0,0" VerticalAlignment="Center"/>

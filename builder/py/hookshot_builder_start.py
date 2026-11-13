@@ -92,7 +92,7 @@ def main():
     app.setApplicationDisplayName("Hookshot")
     from hookshot_builder import paths, theme
     from hookshot_builder.window import Window
-    app.setWindowIcon(QIcon(os.path.join(paths.ASSETS, "hookshot.ico")))
+    app.setWindowIcon(QIcon(os.path.join(paths.ASSETS, "greenboy.ico")))
     theme.load_fonts()
     w = Window(args)
     w.show()

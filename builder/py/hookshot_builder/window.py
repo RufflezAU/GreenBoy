@@ -570,11 +570,11 @@ class Window(QWidget):
         self.prepare_now, self.shaders_began, self.shaders_later, self.built_in = True, False, None, None
         self.weight = WITHOUT_SHADERS
         self.setWindowTitle("Hookshot")
-        self.setWindowIcon(QIcon(os.path.join(paths.ASSETS, "hookshot.ico")))
+        self.setWindowIcon(QIcon(os.path.join(paths.ASSETS, "greenboy.ico")))
         self.setFixedSize(960, 600)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAcceptDrops(True)
-        self.hook = QPixmap(os.path.join(paths.ASSETS, "hookshot.png"))
+        self.hook = QPixmap(os.path.join(paths.ASSETS, "greenboy.png"))
         self.clock = QTimer(self, interval=1000, timeout=self.tick)
         self._build_ui()
         self.out_path.setText(os.path.join(os.path.expanduser("~"), "Games", "Hookshot"))

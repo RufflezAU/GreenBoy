@@ -1,17 +1,17 @@
-# Portable Hookshot Builder on Windows
+# Portable GreenBoy Builder on Windows
 
-Put the release's `HookshotBuilder.exe` setup in a writable folder on your SSD, then run:
+Put the release's `GreenBoyBuilder.exe` setup in a writable folder on your SSD, then run:
 
 ```powershell
-.\HookshotBuilder.exe --portable
+.\GreenBoyBuilder.exe --portable
 ```
 
-The setup creates a marked `HookshotBuilder` data folder beside itself. Keep this folder: it contains the installed
+The setup creates a marked `GreenBoyBuilder` data folder beside itself. Keep this folder: it contains the installed
 Builder, downloaded update parts, settings, SDK downloads you opt into, and the default build files. The normal setup
-continues to use `%LOCALAPPDATA%\HookshotBuilder`; portable mode does not import that installation or its settings.
+continues to use `%LOCALAPPDATA%\GreenBoyBuilder`; portable mode does not import that installation or its settings.
 To reuse existing game files, select them explicitly in the new Builder.
 
-The default game folder is `Hookshot` beside the data folder. Keep the game and Builder on the same volume. You can
+The default game folder is `GreenBoy` beside the data folder. Keep the game and Builder on the same volume. You can
 move their containing folder or change that volume's drive letter: the game records a relative association to its
 Builder, and paths selected on the same volume are saved relative to the Builder home. Paths on another volume stay
 absolute and may need selecting again after moving. Desktop and Start menu shortcuts start unchecked in portable

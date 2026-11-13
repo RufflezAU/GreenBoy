@@ -1,4 +1,4 @@
-# Hookshot (oot-recomp): design
+# GreenBoy (oot-recomp): design
 
 A native x86-64 Windows and Linux build of the Switch 2 *The Legend of Zelda: Ocarina of Time* remake: the game's AArch64
 code translated to C ahead of time from the user's own decrypted dump and compiled with clang, the Horizon OS and

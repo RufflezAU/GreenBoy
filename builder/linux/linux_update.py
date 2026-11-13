@@ -562,19 +562,19 @@ def _check_links_inside(dest):
 def _finish_tree(dest):
     """AppRun at the root, from the tools just installed, so this folder starts the way the AppImage does."""
     _check_links_inside(dest)
-    for name in ("AppRun", "hookshot.png", "hookshot-builder.desktop"):
+    for name in ("AppRun", "greenboy.png", "greenboy-builder.desktop"):
         if os.path.islink(os.path.join(dest, name)):   # (written below: never through a link a part made)
             raise ValueError("the update has a link where %s goes" % name)
     tools = os.path.join(dest, "usr", "share", "hookshot")
     apprun = os.path.join(dest, "AppRun")
     shutil.copyfile(os.path.join(tools, "builder", "linux", "AppRun"), apprun)
     os.chmod(apprun, 0o755)   # (rwxr-xr-x: the launcher must run; only its owner may change it)
-    icon = os.path.join(tools, "assets", "hookshot.png")
+    icon = os.path.join(tools, "assets", "greenboy.png")
     if os.path.isfile(icon):
-        shutil.copyfile(icon, os.path.join(dest, "hookshot.png"))
-    desktop = os.path.join(tools, "builder", "linux", "hookshot-builder.desktop")
+        shutil.copyfile(icon, os.path.join(dest, "greenboy.png"))
+    desktop = os.path.join(tools, "builder", "linux", "greenboy-builder.desktop")
     if os.path.isfile(desktop):
-        shutil.copyfile(desktop, os.path.join(dest, "hookshot-builder.desktop"))
+        shutil.copyfile(desktop, os.path.join(dest, "greenboy-builder.desktop"))
     return apprun
 
 

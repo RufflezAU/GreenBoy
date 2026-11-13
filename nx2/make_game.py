@@ -2464,9 +2464,9 @@ def main(a=None):
              ([] if launcher else ["--incremental"]), check=False, output=sys.stderr):
         print("the button prompts of other controllers were not made: the game shows its own", flush=True)
         shutil.rmtree(prompts, ignore_errors=True)
-    icon = os.path.join(ROOT, "assets", "hookshot.png")
+    icon = os.path.join(ROOT, "assets", "greenboy.png")
     if LINUX and os.path.exists(icon):   # (the window's icon: host/posix/display_sdl.c)
-        copy_writable(icon, os.path.join(out, "hookshot.png"))   # (a second build overwrites the first's)
+        copy_writable(icon, os.path.join(out, "greenboy.png"))   # (a second build overwrites the first's)
     seed_pipelines(out)
     ship_state_list(out)
     language = os.path.join(out, "language.txt")   # (the same text as host/nn_applet.c writes)

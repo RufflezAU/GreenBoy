@@ -1161,7 +1161,7 @@ def main():
     if build_vk:
         cxx = toolchain.need(toolchain.find("clang++"))
         vk = os.path.join(GPU, "vk")
-        # (hookshot) the start-up screen's logo, assets/hookshot.png as RGBA bytes in a header of the build's own (nx2/logo_rgba.py);
+        # (hookshot) the start-up screen's logo, assets/greenboy.png as RGBA bytes in a header of the build's own (nx2/logo_rgba.py);
         # its bytes are part of vk_imgui.cpp's dependencies. Only when the back end is compiled here: the AppImage's comes built
         # (HOOKSHOT_VK_PREBUILT) and carries neither third_party/fonts nor the back end's sources, and a player's build there
         # stopped at the fonts (FileNotFoundError: LibertinusSans-Regular.ttf, 2026-11-10)

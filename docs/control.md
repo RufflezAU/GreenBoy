@@ -398,7 +398,7 @@ time): planned.
 ## The client
 
 ```
-export HOS_CONTROL=$(python -I scripts/hookshot_ctl.py launch ~/Games/Hookshot --data /tmp/oot-data --headless)
+export HOS_CONTROL=$(python -I scripts/hookshot_ctl.py launch ~/Games/GreenBoy --data /tmp/oot-data --headless)
 # (a first start prepares the shaders before the first frame: the game reads no controller until then)
 python -I scripts/hookshot_ctl.py wait frame --frame 1 --timeout 900
 # (the title and the file select need A: press it until the save is loaded)

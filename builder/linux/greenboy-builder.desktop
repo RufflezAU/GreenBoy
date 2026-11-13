@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Hookshot Builder
-Comment=Builds Ocarina of Time for PC from your own copy of the game
+Name=GreenBoy Builder
+Comment=Builds your own copy of the game into a native PC program
 Exec=AppRun
-Icon=hookshot
+Icon=greenboy
 Categories=Game;
 Terminal=false
 Actions=Play;
@@ -11,4 +11,4 @@ Actions=Play;
 [Desktop Action Play]
 Name=Play
 Exec=AppRun --play
-Icon=hookshot
+Icon=greenboy

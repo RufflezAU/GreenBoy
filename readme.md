@@ -1,15 +1,16 @@
 <h1 align="center">
   <br>
   <a>
-  <img src="assets/hookshot.png" alt="Hookshot" width="200">
+  <img src="assets/greenboy.png" alt="GreenBoy" width="200">
 </a>
 
   <br>
-  <b>Hookshot</b>
+  <b>GreenBoy</b>
   <br>
 </h1>
 
-<h4 align="center">The Legend of Zelda: Ocarina of Time (Nintendo Switch 2) running natively on Windows & Linux, with no emulator.
+<h4 align="center">A native PC build of your own copy of the game, on Windows and Linux, with no emulator.
+Tuned and measured on the Steam Deck.
 </h4>
 
 
@@ -25,8 +26,8 @@
   <a href="#license">License</a>
 </p>
 
-Hookshot is a static recompilation. The game's code is translated to C and compiled into a Windows or Linux program,
-the console's system software is reimplemented, and the Switch 2 graphics are rebuilt on Vulkan. All of this happens
+GreenBoy is a static recompilation. The game's code is translated to C and compiled into a Windows or Linux program,
+the console's system software is reimplemented, and its graphics API is rebuilt on Vulkan. All of this happens
 **on your PC, from your own copy of the game**.
 <br>
 
@@ -34,7 +35,6 @@ the console's system software is reimplemented, and the Switch 2 graphics are re
 > Some users report the file in releases to be a Trojan - it is not. Feel free to run it through any antivirus software
 
 
-Discord: https://discord.gg/rexed
 <br>
 
 > [!IMPORTANT]
@@ -52,22 +52,22 @@ what does not yet. Open problems are collected in tracking issues, linked below.
 | Kokiri Forest: reaching gameplay and walking around | ✅ Works |
 | Sound, controller, keyboard and saves | ✅ Works |
 | In-game menu, frame generation and upscaling | ✅ Works |
-| Flicker (the picture flashing too bright while moving) | ✅ Fixed in v2.0.2 ([#645](https://github.com/NotRexed/Hookshot/pull/645)) |
-| Ground fog vanishing when looking down | ✅ Fixed in v2.0.2 ([#638](https://github.com/NotRexed/Hookshot/pull/638)) |
+| Flicker (the picture flashing too bright while moving) | ✅ Fixed in v2.0.2 ([#645](https://github.com/RufflezAU/GreenBoy/pull/645)) |
+| Ground fog vanishing when looking down | ✅ Fixed in v2.0.2 ([#638](https://github.com/RufflezAU/GreenBoy/pull/638)) |
 | Models with missing pieces (doors, fences, parts of trees) | ✅ Fixed where tested, more play needed |
 | Stutter when entering new areas | ⚠️ Still happens the first time you visit a place. The next visits are smooth |
 | Performance | ⚠️ Depends on the PC: some reach a steady 60 fps, others stay below it, more so in Hyrule Field |
-| Hyrule Field, Castle Town, Kakariko and the dungeons | ⚠️ Players got there, with open bugs: lighting and shadows ([#1004](https://github.com/NotRexed/Hookshot/issues/1004)), crashes and freezes ([#2507](https://github.com/NotRexed/Hookshot/issues/2507)) |
-| Ultrawide and 4:3 | ✅ Works. The Aspect ratio row's default, Monitor's shape, widens the 3D to the screen and keeps the HUD and movies in the middle 16:9 ([#2119](https://github.com/NotRexed/Hookshot/pull/2119)) |
+| Hyrule Field, Castle Town, Kakariko and the dungeons | ⚠️ Players got there, with open bugs: lighting and shadows ([#1004](https://github.com/RufflezAU/GreenBoy/issues/1004)), crashes and freezes ([#2507](https://github.com/RufflezAU/GreenBoy/issues/2507)) |
+| Ultrawide and 4:3 | ✅ Works. The Aspect ratio row's default, Monitor's shape, widens the 3D to the screen and keeps the HUD and movies in the middle 16:9 ([#2119](https://github.com/RufflezAU/GreenBoy/pull/2119)) |
 | NVIDIA cards | ✅ Works. The most tested |
-| AMD cards | ⚠️ Many tested: reports from the RX 6600, RX 6800 XT, RX 7800 XT, RX 7900 XTX and RX 9070 XT. On Windows, the RX 6000 cards (Navi 21 and 22) draw task and mesh shaders through the compute fallback by default, as the driver lost the GPU with them ([#1747](https://github.com/NotRexed/Hookshot/pull/1747), [#1992](https://github.com/NotRexed/Hookshot/pull/1992), [#2215](https://github.com/NotRexed/Hookshot/pull/2215)). Driver crashes and device lost are still reported ([#996](https://github.com/NotRexed/Hookshot/issues/996)) |
-| Intel cards | ❓ Few reports, many of them black screens or crashes ([#999](https://github.com/NotRexed/Hookshot/issues/999)) |
-| Cards without mesh shaders (such as AMD RX 5000 and older) | ❌ Not supported: parts of the picture are missing. Since v2.0.6 a fallback runs the mesh programs as compute shaders on cards with buffer device addresses ([#640](https://github.com/NotRexed/Hookshot/issues/640)); it leaves out the mesh draws that take their count from a buffer |
-| Linux | ✅ Works with the AppImage. Tested on several distributions (CachyOS, Fedora, Bazzite, SteamOS) and cards, with open problems on some AMD cards ([#1000](https://github.com/NotRexed/Hookshot/issues/1000)) |
+| AMD cards | ⚠️ Many tested: reports from the RX 6600, RX 6800 XT, RX 7800 XT, RX 7900 XTX and RX 9070 XT. On Windows, the RX 6000 cards (Navi 21 and 22) draw task and mesh shaders through the compute fallback by default, as the driver lost the GPU with them ([#1747](https://github.com/RufflezAU/GreenBoy/pull/1747), [#1992](https://github.com/RufflezAU/GreenBoy/pull/1992), [#2215](https://github.com/RufflezAU/GreenBoy/pull/2215)). Driver crashes and device lost are still reported ([#996](https://github.com/RufflezAU/GreenBoy/issues/996)) |
+| Intel cards | ❓ Few reports, many of them black screens or crashes ([#999](https://github.com/RufflezAU/GreenBoy/issues/999)) |
+| Cards without mesh shaders (such as AMD RX 5000 and older) | ❌ Not supported: parts of the picture are missing. Since v2.0.6 a fallback runs the mesh programs as compute shaders on cards with buffer device addresses ([#640](https://github.com/RufflezAU/GreenBoy/issues/640)); it leaves out the mesh draws that take their count from a buffer |
+| Linux | ✅ Works with the AppImage. Tested on several distributions (CachyOS, Fedora, Bazzite, SteamOS) and cards, with open problems on some AMD cards ([#1000](https://github.com/RufflezAU/GreenBoy/issues/1000)) |
 
 ## Install and play
 
-The game does not come ready-made: Hookshot Builder builds it on your PC from your copy. You do this once. After that
+The game does not come ready-made: GreenBoy Builder builds it on your PC from your copy. You do this once. After that
 you start the game from its launcher, which also updates it.
 
 ### What you need
@@ -89,40 +89,40 @@ you start the game from its launcher, which also updates it.
 ### On Windows
 
 For a portable install on an external SSD, run the downloaded setup with `--portable`; see
-[Portable Hookshot Builder](docs/windows-portable-builder.md) for folder, move and repair behavior.
+[Portable GreenBoy Builder](docs/windows-portable-builder.md) for folder, move and repair behavior.
 
-1. Open the [latest release](https://github.com/NotRexed/Hookshot/releases/latest) and download `HookshotBuilder.exe`.
-2. Run it. It downloads the rest of Hookshot Builder (about 500 MB), checks it, and opens it.
+1. Open the [latest release](https://github.com/RufflezAU/GreenBoy/releases/latest) and download `GreenBoyBuilder.exe`.
+2. Run it. It downloads the rest of GreenBoy Builder (about 500 MB), checks it, and opens it.
 3. Pick your game. The builder looks for `.nup` files in your Downloads, Desktop and Documents folders and lists them
    under **Found on this PC**. Not listed? Press **Browse…**, drop the file on the window, or choose
    **romfs and exefs folders**. The builder checks that it is the right version.
-4. Under **Install the game to**, keep the folder (`Games\Hookshot` in your user folder) or press **Change**. Choose
+4. Under **Install the game to**, keep the folder (`Games\GreenBoy` in your user folder) or press **Change**. Choose
    the **Game language**.
 5. Press **Build the game**. It takes about 10 to 45 minutes, depending on your CPU and memory. You can use your PC in
    the meantime.
 6. When it says **Your game is ready**, press **Play**. The **Desktop shortcut** and **Start menu entry** boxes are
    ticked: untick them if you don't want them.
 
-Next time, start the game from the Hookshot shortcut, or `hookshot.exe` in the game folder. That is the launcher: it
+Next time, start the game from the GreenBoy shortcut, or `hookshot.exe` in the game folder. That is the launcher: it
 has **Play**, and **Update** when a newer release is out.
 
 The first start prepares the game's shaders, which takes a while. Later starts are faster.
 
 ### On Linux
 
-1. Open the [latest release](https://github.com/NotRexed/Hookshot/releases/latest) and download
-   `Hookshot-<version>-x86_64.AppImage`. It is Hookshot Builder with everything it needs inside.
+1. Open the [latest release](https://github.com/RufflezAU/GreenBoy/releases/latest) and download
+   `GreenBoy-<version>-x86_64.AppImage`. It is GreenBoy Builder with everything it needs inside.
 2. Allow it to run as a program. In most file managers: right-click it, open **Properties**, and turn on
    "Allow executing file as program" (the words differ between desktops). Or in a terminal:
-   `chmod +x Hookshot-*-x86_64.AppImage`.
-3. Double-click it. The Hookshot Builder window opens.
+   `chmod +x GreenBoy-*-x86_64.AppImage`.
+3. Double-click it. The GreenBoy Builder window opens.
 4. Under **Game files**, choose **.nup file** or **romfs and exefs**, then press **Browse** to pick them. The builder
    checks the version.
-5. Under **Save the game to**, keep `~/Games/Hookshot` or choose another folder. Choose a **Language**.
+5. Under **Save the game to**, keep `~/Games/GreenBoy` or choose another folder. Choose a **Language**.
 6. Press **Build**. It takes about 10 to 45 minutes, depending on your CPU and memory.
 7. When it says "Your game is ready", press **Play**.
 
-The game is also added to your applications menu as "Hookshot". That entry, and `hookshot` in the game folder, open the
+The game is also added to your applications menu as "GreenBoy". That entry, and `hookshot` in the game folder, open the
 launcher: **Play**, and **Update** when a newer release is out. Keep the AppImage where it is: the launcher uses it to
 update.
 
@@ -135,7 +135,7 @@ The same AppImage also builds and starts the game without opening the window, fo
 script: see [Linux, the AppImage from the command line](#build-from-source).
 
 For fast GPU memory imports on Linux, the game user needs read/write access to `/dev/udmabuf` (the kernel's
-`udmabuf` module). Without it, Hookshot falls back to host-pointer imports, which can be much slower on AMD/RADV
+`udmabuf` module). Without it, GreenBoy falls back to host-pointer imports, which can be much slower on AMD/RADV
 (NVIDIA's driver refuses these dma-bufs, so on NVIDIA the game uses host-pointer imports, which are not slow there);
 permission errors produce a warning on stderr and in `hookshot_log.txt`. With an NVIDIA card on NVIDIA's own driver
 you do not need this access and can ignore that warning: the check runs at the start, before the game knows which
@@ -157,7 +157,7 @@ When a new release is out, the launcher says "Update available". Press **Update*
 `hookshot` (or the AppImage) on Linux. It downloads only the parts that changed and builds the game again in the same
 folder. The build files of the last build are gone by then (see [Where the files go](#where-the-files-go)), so an
 update takes about as long as the first build. Your saves and settings are kept. What changed is on the
-[Releases page](https://github.com/NotRexed/Hookshot/releases).
+[Releases page](https://github.com/RufflezAU/GreenBoy/releases).
 
 <details>
 <summary>What an update keeps and replaces, and updating from the command line</summary>
@@ -182,20 +182,20 @@ with `--update <game folder>`.
 ### Latest development build
 
 Want a fix before it is in a release? The
-[latest development build](https://github.com/NotRexed/Hookshot/releases/tag/nightly) is made from `main` after every
+[latest development build](https://github.com/RufflezAU/GreenBoy/releases/tag/nightly) is made from `main` after every
 change, with the same files as a release. It is untested and may break your saves or settings: copy them first (see
 above).
 
-- **Windows:** download `HookshotBuilder.exe` from it and start it from a terminal as `HookshotBuilder.exe --tag nightly`
+- **Windows:** download `GreenBoyBuilder.exe` from it and start it from a terminal as `GreenBoyBuilder.exe --tag nightly`
   (without `--tag nightly` it installs the latest release instead).
-- **Linux:** download `Hookshot-<version>-x86_64.AppImage` from it and use it as above.
+- **Linux:** download `GreenBoy-<version>-x86_64.AppImage` from it and use it as above.
 
-To go back, install the [latest release](https://github.com/NotRexed/Hookshot/releases/latest) the usual way.
+To go back, install the [latest release](https://github.com/RufflezAU/GreenBoy/releases/latest) the usual way.
 
 ### Where the files go
 
 - The build reads your game and never changes it. It writes to the folder you choose and to the builder's own folder:
-  `%LOCALAPPDATA%\HookshotBuilder` on Windows, `~/.cache/hookshot-builder` on Linux.
+  `%LOCALAPPDATA%\GreenBoyBuilder` on Windows, `~/.cache/hookshot-builder` on Linux.
 - The romfs is hard-linked instead of copied where the disk allows it.
 - The build files (about 4 GB: the translated code and the compiled objects) are deleted once the game is ready. None
   of them are needed to play. To keep them, so that an update compiles only what changed, set the environment variable
@@ -208,9 +208,9 @@ To go back, install the [latest release](https://github.com/NotRexed/Hookshot/re
   [using a save from an emulator](docs/saves.md).
 - To uninstall, delete the game folder, the builder's folder and the shortcuts.
 
-### What Hookshot connects to
+### What GreenBoy connects to
 
-Hookshot uploads nothing about you or your PC. It reads no browser data, passwords or session keys. Everything it does on
+GreenBoy uploads nothing about you or your PC. It reads no browser data, passwords or session keys. Everything it does on
 the network or with other programs:
 
 - **Downloads from GitHub only.** The builder and the updater ask `api.github.com` which release is the latest, and download
@@ -218,10 +218,10 @@ the network or with other programs:
   parts and the shared pipeline list). With **DLSS** ticked in the builder, NVIDIA's DLSS library comes from
   `github.com/NVIDIA/DLSS`. The game checks for a newer release on `api.github.com` at start; set
   `HOOKSHOT_NO_UPDATE_CHECK=1` to turn that off.
-- **Your Discord status, through the Discord app on this PC.** While Discord runs, the game shows "Playing Hookshot" with
+- **Your Discord status, through the Discord app on this PC.** While Discord runs, the game shows "Playing GreenBoy" with
   the time played. It does this the way every game does: through the Discord app's own local connection, a named pipe on
   Windows and the socket `discord-ipc-0` in `$XDG_RUNTIME_DIR` (or `$TMPDIR`, or `/tmp`) on Linux. What it sends is
-  "Ocarina of Time", the Hookshot version, the start time and the icon's name. The Discord app then shows it through
+  "Ocarina of Time", the GreenBoy version, the start time and the icon's name. The Discord app then shows it through
   Discord's servers. Turn it off with **Gameplay → Discord status** in the Insert menu.
 - **Files it writes outside the game folder:** the builder's own folder (above), its settings (`~/.config/hookshot` on
   Linux), the saves (above), and shortcuts if you ask for them. **Bug report** (Gameplay tab) only writes a folder in
@@ -230,7 +230,7 @@ the network or with other programs:
 - On Linux the game starts through a small script (`play-diagnostics.sh`). It keeps the game's first error messages in
   `hookshot_startup.log` in the game folder, using a private temporary folder there that it removes when the game exits.
 
-Only download Hookshot from this repository's [Releases](https://github.com/NotRexed/Hookshot/releases). Each release
+Only download GreenBoy from this repository's [Releases](https://github.com/RufflezAU/GreenBoy/releases). Each release
 lists its files' checksums in `SHA256SUMS`. A copy from anywhere else may not be ours.
 
 ### If something goes wrong
@@ -240,18 +240,18 @@ lists its files' checksums in `SHA256SUMS`. A copy from anywhere else may not be
 | Where is the log? | `hookshot_log.txt` in the game folder holds the last run. The four runs before are `hookshot_log.1.txt` (the last) to `.4.txt`. Started from a terminal, the game prints there instead. Every 600 frames it has a `vk: status:` line: the video memory in use of what the driver allows, and DLSS's details while it draws; `vk: over the driver's video-memory allowance` says when the game passed it |
 | A place has a wrong texture, or a floor or wall is missing | Look for `hookshot_damaged_files.txt` in the game folder. The build writes it when your game dump is incomplete (about 23.3 GB, a complete one is about 23.8 GB): it lists each damaged game file and the file put in its place. Dump the game again and build from the new dump; the file is then removed |
 | Linux Builder Play closed before the game log appeared | After the game exits, check `hookshot_startup.log` in the game folder for up to 64 KiB of startup stderr and its exit status. |
-| "Hookshot supports build e0f3ccfa" or "This version isn't supported" | Check that you chose the right game with its update installed |
-| The game opens and closes, or the log says "device lost" | Update your graphics driver. On AMD cards there are known crashes ([#708](https://github.com/NotRexed/Hookshot/issues/708), [#614](https://github.com/NotRexed/Hookshot/issues/614)) |
-| Parts of the picture are missing, or a message says your card has no mesh shader support | The card or its driver has no mesh shaders. Update the driver; older cards are not supported ([#640](https://github.com/NotRexed/Hookshot/issues/640)) |
+| "GreenBoy supports build e0f3ccfa" or "This version isn't supported" | Check that you chose the right game with its update installed |
+| The game opens and closes, or the log says "device lost" | Update your graphics driver. On AMD cards there are known crashes ([#708](https://github.com/RufflezAU/GreenBoy/issues/708), [#614](https://github.com/RufflezAU/GreenBoy/issues/614)) |
+| Parts of the picture are missing, or a message says your card has no mesh shader support | The card or its driver has no mesh shaders. Update the driver; older cards are not supported ([#640](https://github.com/RufflezAU/GreenBoy/issues/640)) |
 | AMD: blocky textures, solid rectangles in the sky or unusually dark courtyard surfaces | Try the [RGBA8 texture workaround](#amd-texture-workaround). It uses more graphics memory |
 | Linux: the game does not start or the picture is broken | The game needs a Vulkan 1.3 driver with mesh shaders. Check with `vulkaninfo \| grep mesh`: it should list `VK_EXT_mesh_shader`. Update Mesa or the NVIDIA driver |
-| Steam Deck: the game freezes and closes in Kokiri Forest or the Great Deku Tree (`gfx_0.0.0 timeout` in `journalctl -k`) | `RX_VK_MESH_NOCULL=2c56dc1006942f74` in `hookshot_env.txt` gets past it with every model drawn (the culling pass that runs for seconds is turned off). `RX_VK_SKIP_CODE=2c56dc1006942f74` also gets past it, but the models those draws make go missing (see the [development guide](docs/development.md#switches-for-testing-and-debugging), [#817](https://github.com/NotRexed/Hookshot/issues/817)) |
-| "Your antivirus removed part of the build tools" | A false alarm on unsigned programs. Restore the files from Windows Security's Protection history, or add `%LOCALAPPDATA%\HookshotBuilder` to its exclusions, then press **Repair** |
+| Steam Deck: the game freezes and closes in Kokiri Forest or the Great Deku Tree (`gfx_0.0.0 timeout` in `journalctl -k`) | `RX_VK_MESH_NOCULL=2c56dc1006942f74` in `hookshot_env.txt` gets past it with every model drawn (the culling pass that runs for seconds is turned off). `RX_VK_SKIP_CODE=2c56dc1006942f74` also gets past it, but the models those draws make go missing (see the [development guide](docs/development.md#switches-for-testing-and-debugging), [#817](https://github.com/RufflezAU/GreenBoy/issues/817)) |
+| "Your antivirus removed part of the build tools" | A false alarm on unsigned programs. Restore the files from Windows Security's Protection history, or add `%LOCALAPPDATA%\GreenBoyBuilder` to its exclusions, then press **Repair** |
 | Stutter the first time you see something | Normal for now: shaders are being prepared. It gets better when you pass through the same place again. You can help remove it for everyone: [send your pipeline list](#send-your-pipeline-list) |
 | Windows, NVIDIA: stutter every start in places you have seen, after the shaders were prepared | The driver's shader cache is too small to keep them all (the first start builds about 2 GB of pipelines into it). In the NVIDIA Control Panel, Manage 3D settings, set **Shader Cache Size** to **Unlimited** (or 10 GB). On Linux the game raises the driver's limit itself |
 | The game is in the wrong language | Change the code in `language.txt` in the game folder. The file lists them all, and an update keeps the one you set there |
 
-If the problem continues, [report it](https://github.com/NotRexed/Hookshot/issues/new/choose) with the version, where
+If the problem continues, [report it](https://github.com/RufflezAU/GreenBoy/issues/new/choose) with the version, where
 you were in the game, your graphics card, `hookshot_log.txt` and a screenshot or video. Never send game files. The
 in-game menu's **Gameplay → Bug report** gathers all of it in one press ([In-game menu](#in-game-menu)).
 
@@ -275,7 +275,7 @@ has more switches.
 #### AMD texture workaround
 
 For these AMD texture artifacts, try keeping decoded ASTC textures as RGBA8 instead of re-encoding them to BC3
-([#57](https://github.com/NotRexed/Hookshot/issues/57), [#1006](https://github.com/NotRexed/Hookshot/issues/1006)).
+([#57](https://github.com/RufflezAU/GreenBoy/issues/57), [#1006](https://github.com/RufflezAU/GreenBoy/issues/1006)).
 Turn on **ASTC as RGBA8** in the menu's Debug tab, under Developer, and restart the game. (`RX_VK_ASTC_RGBA8=1` in
 `hookshot_env.txt` does the same, as earlier versions of this readme said; while that line is there the row shows its
 value and cannot be changed, so remove the line to choose in the menu.)
@@ -308,8 +308,8 @@ in `hookshot_options.ini` in the game folder.
 
 The menu, the FPS counter and the start-up screen are drawn in the style of the game's own menus. They use the game's
 own menu font, read into memory from your game files (the romfs folder the game runs from) the first time one of them is
-drawn. It is never copied anywhere, and Hookshot does not include it. Without it, or if it has no Latin letters, they use
-Libertinus, which Hookshot includes.
+drawn. It is never copied anywhere, and GreenBoy does not include it. Without it, or if it has no Latin letters, they use
+Libertinus, which GreenBoy includes.
 
 The rows marked "after a restart" below are read when the game starts. While one is changed, it is tagged "After
 restart" and the help on the Graphics tab lists it; closing the menu then asks whether to restart now. **Later** keeps
@@ -364,7 +364,7 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | Microphone | Off, Default, or each microphone by name | Default |
 | | Game language | The game's 16 languages, each by its own name (after a restart) | The one built with |
 | | Menu language | Auto (the game's language), or English, Português (Brasil), Español (Latinoamérica), Español (España), Français, Deutsch, Italiano, Nederlands, Polski, Русский, 日本語, 한국어, 简体中文, 繁體中文 | Auto |
-| | Discord status | Off, On ("Playing Hookshot" and the time played in your Discord status, while Discord runs on this PC) | On |
+| | Discord status | Off, On ("Playing GreenBoy" and the time played in your Discord status, while Discord runs on this PC) | On |
 | | Skip opening | Off, On (skips the new-game opening: the story movie and Navi waking Link; later cutscenes and the title screen stay) | Off |
 | | Bug report | Saves a report into a new folder in `bug-reports` (below) | |
 | Controls | Controller in background | Off, On | Off |
@@ -423,7 +423,7 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
   holds the frames to its refresh rate: V-Sync on, or the driver's FIFO mode. `HOS_FPS_MAX=<61-1000>` sets a cap for one
   run.
 - **Bug report** writes a folder `bug-reports/<date>_<time>` in the game folder with what an issue needs: `report.txt`,
-  which answers the [game problem form](https://github.com/NotRexed/Hookshot/issues/new?template=1-game-problem.yml)'s
+  which answers the [game problem form](https://github.com/RufflezAU/GreenBoy/issues/new?template=1-game-problem.yml)'s
   questions under its own headings (the version, the map you are in, your graphics card and driver, CPU, RAM and
   system, the menu options and the `RX_`/`HOS_` switches you changed) and ends with a link that opens the form with them
   filled in (the switches by name only); `hookshot_log.txt` (this run's log so far) and `hookshot_log.1.txt` (the run
@@ -543,7 +543,7 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
   one line in `gpu/vk/menu_i18n.h`. Place and item names stay English for now. Japanese, Chinese and Korean letters come
   from the game's own fonts for them, with Windows' (Yu Gothic, Microsoft YaHei, Microsoft JhengHei, Malgun Gothic) or
   Linux's Noto CJK where a game font lacks one.
-- **Discord status** shows "Playing Hookshot" and the time played in your Discord status. It is on by default and does
+- **Discord status** shows "Playing GreenBoy" and the time played in your Discord status. It is on by default and does
   nothing unless a Discord client is running on this PC; with the row Off nothing is sent to it.
 - **Controller in background:** On keeps the controller working while another window has the focus. The keyboard and
   mouse still need the game's window.
@@ -638,7 +638,7 @@ layout emulators use: `mods/<name>/romfs/...` holds files that replace or add to
 `mods/contents/<title id>/<name>/romfs` work too. A folder whose name starts with `-` or `_` is off. When two mods
 have the same file, the one whose folder name sorts last wins, so name them `01-...`, `02-...` to set the order.
 
-Only RomFS mods are loaded. `exefs` patches (`.pchtxt`, `.ips`) are left out: Hookshot compiles the game's code ahead
+Only RomFS mods are loaded. `exefs` patches (`.pchtxt`, `.ips`) are left out: GreenBoy compiles the game's code ahead
 of time, so patching its instructions would need a rebuild. The log (`hookshot_log.txt`) names each mod and the files
 read from it.
 
@@ -647,7 +647,7 @@ A mod file larger than the game's own does not load unless the resource size tab
 aside for it (by the CRC32 of its path without `.zs`; for a texture, its decompressed size + 280). Past that, the game
 goes on without the mod's file, or a loading screen waits for good. A mod that makes files bigger (HD
 textures, longer parameter files) ships the table with its entries grown. Since only one mod's table is used, mods that
-each grow files need one table with all their entries, in the mod that sorts last. Hookshot merges the button prompts'
+each grow files need one table with all their entries, in the mod that sorts last. GreenBoy merges the button prompts'
 entries into that table (each file gets the larger of the two), so your controller's icons stay in texts; the log says
 `(with the button prompts' sizes merged in)` after the table's line. A table it cannot read that way (not the game's
 format, or a zstd frame that does not give its size) is used as it is, with the Switch's icons.
@@ -663,8 +663,8 @@ For developers, and for players who prefer the command line. The builder windows
 <summary>Windows, from the command line</summary>
 
 ```powershell
-python -I nx2/make_game.py --nup "C:\path\your-game.nup" --out "C:\Games\Hookshot" --language en-US
-python -I nx2/make_game.py --romfs "C:\path\romfs" --exefs "C:\path\exefs" --out "C:\Games\Hookshot" --language en-US
+python -I nx2/make_game.py --nup "C:\path\your-game.nup" --out "C:\Games\GreenBoy" --language en-US
+python -I nx2/make_game.py --romfs "C:\path\romfs" --exefs "C:\path\exefs" --out "C:\Games\GreenBoy" --language en-US
 ```
 
 Add `--check` with your `.nup` or `--exefs` to only check the game's version. It builds nothing.
@@ -681,8 +681,8 @@ You need:
   clone or with `HOOKSHOT_MINGW` set to its folder. Without it the build uses the clang from
   [emsdk](https://github.com/emscripten-core/emsdk) at `C:\emsdk` with Visual Studio's C++ tools and the Windows SDK
   (`HOOKSHOT_MSVC=1` forces that route).
-- What the builder's `tools` folder carries and a clone does not. Run `HookshotBuilder.exe` once: the folder is
-  `%LOCALAPPDATA%\HookshotBuilder\versions\<version>\HookshotBuilder\tools`. The builder sets the variables itself;
+- What the builder's `tools` folder carries and a clone does not. Run `GreenBoyBuilder.exe` once: the folder is
+  `%LOCALAPPDATA%\GreenBoyBuilder\versions\<version>\GreenBoyBuilder\tools`. The builder sets the variables itself;
   from the command line, set them before you run `make_game.py`:
   - `tools\cpm`: the Vulkan headers and FFmpeg. Set `RX_CPM` to this folder. Without it (and without system
     Vulkan / SPIR-V / VMA headers or `HOOKSHOT_*_HEADERS`), the standalone build stops instead of shipping a
@@ -700,10 +700,10 @@ You need:
 <summary>Linux, the AppImage from the command line</summary>
 
 ```sh
-./Hookshot-<version>-x86_64.AppImage --cli --nup ~/your-game.nup --out ~/Games/Hookshot   # make_game.py's options
-./Hookshot-<version>-x86_64.AppImage --play                    # the game the builder built last, without the window
-./Hookshot-<version>-x86_64.AppImage --play ~/Games/Hookshot   # the game in that folder
-./Hookshot-<version>-x86_64.AppImage --update ~/Games/Hookshot # the new release, and that folder built again
+./GreenBoy-<version>-x86_64.AppImage --cli --nup ~/your-game.nup --out ~/Games/GreenBoy   # make_game.py's options
+./GreenBoy-<version>-x86_64.AppImage --play                    # the game the builder built last, without the window
+./GreenBoy-<version>-x86_64.AppImage --play ~/Games/GreenBoy   # the game in that folder
+./GreenBoy-<version>-x86_64.AppImage --update ~/Games/GreenBoy # the new release, and that folder built again
 ```
 
 `HOOKSHOT_JOBS=<n>` (or `--jobs <n>` with `--cli`) limits how many files compile at once.
@@ -755,12 +755,12 @@ use them.
 For example, keep saves somewhere else:
 
 ```powershell
-cd "C:\Games\Hookshot"
-.\bin\hookshot.exe --user "D:\Hookshot data"
+cd "C:\Games\GreenBoy"
+.\bin\hookshot.exe --user "D:\GreenBoy data"
 ```
 
 ```sh
-cd ~/Games/Hookshot
+cd ~/Games/GreenBoy
 ./bin/hookshot --user "$HOME/hookshot-data"
 ```
 
@@ -791,22 +791,22 @@ NVIDIA RTX cards (`dlss=` in `hookshot_options.ini`, `RX_VK_DLSS=0/1/2` for one 
 the game's own upscaler, with camera jitter (**NVIDIA Reflex** needs no SDK and is in
 every build). NVIDIA's files are NVIDIA's, under its own license, the
 [NVIDIA RTX SDKs license](https://github.com/NVIDIA/DLSS/blob/9981c6350dc58c0ce21f024fd65e31e851c31689/LICENSE.txt).
-Hookshot never includes or redistributes them: each build downloads them for itself, and only after you accept that
+GreenBoy never includes or redistributes them: each build downloads them for itself, and only after you accept that
 license. Never share a game folder built with them, and do not post builds made with them.
 
-- **Windows, the Hookshot Builder:** tick **NVIDIA DLSS (downloads NVIDIA's SDK under NVIDIA's license)** before you
+- **Windows, the GreenBoy Builder:** tick **NVIDIA DLSS (downloads NVIDIA's SDK under NVIDIA's license)** before you
   build. It is off by default and shows NVIDIA's license when you tick it. The build downloads the SDK into
-  `%LOCALAPPDATA%\HookshotBuilder\ngx-sdk` and puts DLSS's runtime, `nvngx_dlss.dll`, and DLSS Frame Generation's,
+  `%LOCALAPPDATA%\GreenBoyBuilder\ngx-sdk` and puts DLSS's runtime, `nvngx_dlss.dll`, and DLSS Frame Generation's,
   `nvngx_dlssg.dll`, in the game folder's `ngx` folder.
 - **Windows, the command line:** `python -I scripts/ngx_sdk.py --platform windows <sdk folder>` asks you to accept
   NVIDIA's license (or pass `--accept-nvidia-license`) and fetches the headers, `nvsdk_ngx_s.lib`, `nvngx_dlss.dll` and
   `nvngx_dlssg.dll`, each checked against its SHA-256. Then build with `HOOKSHOT_NGX_SDK=<sdk folder>`: `make_game.py`
-  copies both runtimes into `<game folder>\ngx`. NGX is also pointed at `%LOCALAPPDATA%\Hookshot\ngx`, and at
+  copies both runtimes into `<game folder>\ngx`. NGX is also pointed at `%LOCALAPPDATA%\GreenBoy\ngx`, and at
   `RX_VK_DLSS_DIR` when it is set, and uses the newest of each it finds across them (to try a given one, make sure no
   other folder has a newer one). Without `nvngx_dlssg.dll` there, frame generation takes the driver's own copy, which
   may be older: one that makes 1 frame at most, or refuses every set. Never copy NGX's core, `_nvngx.dll`, beside
   the game: it comes with NVIDIA's driver.
-- **Linux, the Hookshot Builder (the AppImage):** the same tick as on Windows, and nothing else to do: no variable is
+- **Linux, the GreenBoy Builder (the AppImage):** the same tick as on Windows, and nothing else to do: no variable is
   passed to the AppImage and no file is copied by hand. The build downloads the SDK into the builder's cache folder,
   `$XDG_CACHE_HOME/hookshot-builder/ngx-sdk` (`~/.cache/hookshot-builder/ngx-sdk`), builds the game with it and puts
   DLSS's runtime, `libnvidia-ngx-dlss.so.<version>`, and frame generation's, `libnvidia-ngx-dlssg.so.<version>`, in
@@ -862,12 +862,12 @@ With HDR on **Native**, it takes the game's HDR colour as linear light, so highl
 Unlike FSR 3.1 (above), it runs AMD's own DLLs, so it needs them beside the game. Choose it in the menu (`dlss=4` or `5`
 in `hookshot_options.ini`, `RX_VK_FSR4=1` or `2` for one run, `RX_VK_FSR4=0` to leave it out).
 
-- **Windows, the Hookshot Builder:** tick **AMD FSR 4** before you build. It shows AMD's license first and stays ticked
+- **Windows, the GreenBoy Builder:** tick **AMD FSR 4** before you build. It shows AMD's license first and stays ticked
   only if you accept; the build then fetches AMD's DLLs for you (below), into the builder's `ffx-sdk` folder and the
   game folder.
 - **The command line:** `make_game.py --fsr` (or `HOOKSHOT_FSR=1` for `nx2/build.py`). Rebuilding a folder built with
   it (`--update`) keeps it; `--no-fsr` takes it out.
-- **AMD's files:** Hookshot includes only AMD's MIT-licensed API headers (`third_party/fidelityfx`). Put
+- **AMD's files:** GreenBoy includes only AMD's MIT-licensed API headers (`third_party/fidelityfx`). Put
   `amd_fidelityfx_loader_vk.dll` and `amd_fidelityfx_upscaler_vk.dll` from the
   [FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) 2.4 release (`Kits/FidelityFX/signedbin`)
   beside the game's exe (`bin\hookshot.exe`) or in the game folder. (`RX_VK_FSR_DIR` names another folder, for testing:
@@ -943,7 +943,7 @@ movie networks.
 `RX_VK_SKIP_CODE=<prefix,...>` leaves out the draws of every program with a stage whose native code key starts with one
 of the prefixes (the keys the log prints after "its code:"). On a Steam Deck, `RX_VK_SKIP_CODE=2c56dc1006942f74`
 avoids a GPU hang in Kokiri Forest and the Great Deku Tree: the GPU runs for seconds in the programs that share that
-task shader (a culling pass) until the kernel resets it ([#817](https://github.com/NotRexed/Hookshot/issues/817)).
+task shader (a culling pass) until the kernel resets it ([#817](https://github.com/RufflezAU/GreenBoy/issues/817)).
 It is a workaround, not a fix: those are task + mesh programs, so the geometry they draw goes with them, and key models
 are missing while it is set. Off unless set.
 
@@ -992,9 +992,9 @@ The first time the game meets a pipeline it builds it on the spot, which stutter
 pipelines before the title, and every player's play adds to it. To send yours:
 
 1. In the game, open the menu (Insert or F1), go to the **Debug** tab and choose **Save my pipeline list** (under Developer). Or, in
-   Hookshot Builder's launcher page for the game folder, press **Save my pipeline list**.
+   GreenBoy Builder's launcher page for the game folder, press **Save my pipeline list**.
 2. It saves `hookshot-pipelines-<date>.zip` in your Downloads folder, copies a filled-in report to the clipboard and
-   opens the [Submit your pipelines](https://github.com/NotRexed/Hookshot/issues/2034) issue in your browser.
+   opens the [Submit your pipelines](https://github.com/RufflezAU/GreenBoy/issues/2034) issue in your browser.
 3. Attach the zip to a comment there, paste the report and fill in where you played.
 
 The zip holds only `hookshot_pipeline_states.bin` (shader hashes, formats and draw state, and the hashes of the compute
@@ -1015,13 +1015,13 @@ looks like.
 
 ## Credits
 
-Hookshot exists thanks to the work of many people:
+GreenBoy exists thanks to the work of many people:
 
-- **NotRexed**: Hookshot, BlueShell (Mario Kart World), Skybound (Tears of the Kingdom) and the a64-kit tools.
+- **NotRexed**: GreenBoy, BlueShell (Mario Kart World), Skybound (Tears of the Kingdom) and the a64-kit tools.
 - **[Eden](https://git.eden-emu.dev/eden-emu/eden)** and **Eglantine**: the shader recompiler and Switch 2 shader work.
 - **suyu**: the graphics decoders and the AArch64 translator.
 - **[seedds/nxnative](https://github.com/seedds/nxnative)**: reference for how task and mesh shaders work.
-- **[EvilBoyce / evilmfkr](https://github.com/evilmfkr/Hookshot)** (EvilOOT): the GPU culling that brings back Kokiri's foliage
+- **[EvilBoyce / evilmfkr](https://github.com/evilmfkr/GreenBoy)** (EvilOOT): the GPU culling that brings back Kokiri's foliage
   (trees, ferns, grass, falling leaves, fireflies), the ambient light probes, the pond's water, the game's own fog, the freeze
   after Load (Horizon's mutex handoff) and the exposure flicker fix.
 - **[zortos293/Lichii](https://github.com/zortos293/Lichii)**: reference for Ampere shader lowering, and its compare-exchange retry fix.
@@ -1045,10 +1045,10 @@ Hookshot exists thanks to the work of many people:
 
 ## License
 
-Hookshot is free software under the [GNU General Public License, version 3 or later](LICENSE) (GPL-3.0-or-later).
+GreenBoy is free software under the [GNU General Public License, version 3 or later](LICENSE) (GPL-3.0-or-later).
 It includes code from Eden and suyu, which are under the GPL too. Third-party parts under other licenses that
 work with the GPL (Sirit, the Vulkan Memory Allocator, SDL, Opus, Dear ImGui, zstd, the Libertinus fonts, zbic and the
 a64-kit tools) keep their own notices in their folders.
 
-Hookshot is an unofficial fan project, not affiliated with or endorsed by Nintendo. The Legend of Zelda and Ocarina of
-Time are trademarks of Nintendo.
+GreenBoy is an unofficial fan project. It is not affiliated with, endorsed by, or associated with the rights holders
+of the game it builds. All game code, assets and trademarks belong to them.
