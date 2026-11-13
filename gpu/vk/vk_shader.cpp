@@ -135,6 +135,8 @@ struct Code {
     // PsychoV35 may take (scene_tonemap_for)
     bool scene_fit = false;
     uint8_t sph[sizeof(Shader::ProgramHeader)]{};
+    uint64_t ctl_guest = 0, data_guest = 0;
+    uint32_t area_bytes = 0;
     bool ok = false;
     std::string why;   // (hookshot) not ok: why, for the log ("1 failed" alone said nothing of which program, or why)
 };
@@ -167,7 +169,10 @@ Code read_code(const nvn_stage_data& sd) {
         snprintf(path, sizeof path, "%s/%016llx.bin", dir, (unsigned long long)code_key(ctl, area.data(), end));
         if (FILE* f = fopen(path, "wb")) fwrite(ctl, 1, sizeof ctl, f), fwrite(area.data(), 1, end, f), fclose(f);
     }
-    return parse_code(ctl, area);
+    Code c = parse_code(ctl, area);
+    c.ctl_guest = host->gpu_guest(sd.control);
+    c.data_guest = host->gpu_guest(sd.data);
+    return c;
 }
 
 /// A control section and its code, from the game's memory or the archives (the seed)
@@ -175,6 +180,7 @@ Code parse_code(const uint8_t* ctl, const std::vector<uint8_t>& area) {
     Code c;
     uint32_t len, c1o;
     const uint32_t end = (uint32_t)area.size();
+    c.area_bytes = end;
     uint16_t st;
     std::memcpy(&len, ctl + 0x38, 4);
     std::memcpy(&c1o, ctl + 0x40, 4);
@@ -1710,14 +1716,10 @@ const Program* mesh_program_locked(const NvnState& s, const uint8_t color_types[
     return raw;
 }
 
-const Program* mesh_program_for(const NvnState& s, const uint8_t color_types[8]) {
-    std::lock_guard lk(shader_mu);
-    return mesh_program_locked(s, color_types);
-}
-
 } // namespace
 
 namespace {
+std::atomic<uint64_t> prog_release_gen{0};
 /// Picks by program and inputs (the replay thread's): draws mostly use programs seen a moment ago with the same
 /// inputs; the variant search runs again only when those changed, and a variant chosen for its textures' types is
 /// kept while the handles it was checked against are the same
@@ -1837,6 +1839,185 @@ struct ProgFast {
 };
 thread_local ProgFast prog_fast[2];
 
+namespace {
+uint32_t mesh_answer_stage_mask(const Program& p) {
+    uint32_t mask = 0;
+    for (const Program::Answer& a : p.answers) {
+        const Stage& st = p.stages[a.stage];
+        if (st.nvn_stage < 0 || st.nvn_stage >= kNvnStages || st.nvn_stage == 5) return ~0u;
+        bool c2;
+        if (a.image) {
+            const auto& d = st.info.image_descriptors[a.desc];
+            c2 = d.handle_program == ~0U && d.cbuf_index == 2;
+        } else {
+            const auto& d = st.info.texture_descriptors[a.desc];
+            c2 = d.handle_program == ~0U && d.cbuf_index == 2 && (!d.has_secondary || d.secondary_cbuf_index == 2);
+        }
+        if (!c2) return ~0u;
+        mask |= 1u << st.nvn_stage;
+    }
+    return mask;
+}
+struct MeshFast {
+    bool on = false;
+    uint8_t dev_mode = 0, a2c = 0, alpha_func = 0;
+    uint32_t mem_gen = 0;
+    uint64_t rel_gen = 0;
+    VkDevice device = VK_NULL_HANDLE;
+    nvn_prog prog{};
+    uint64_t stages = 0, bind = 0, reg = 0, ub = 0;
+    uint8_t ct[8]{};
+    const Program* p = nullptr;
+    uint32_t amask = ~0u;
+    uint64_t tex_gen[kNvnStages]{};
+};
+thread_local MeshFast mesh_fast[2];
+struct MeshStageSpan {
+    uint64_t ctl_guest = 0, data_guest = 0;
+    uint32_t data_bytes = 0;
+};
+struct MeshPick {
+    const Program* p = nullptr;
+    VkDevice device = VK_NULL_HANDLE;
+    nvn_prog prog{};
+    uint8_t ct[8]{};
+    uint8_t dev_mode = 0, a2c = 0, alpha_func = 0, nspans = 0;
+    uint32_t mem_gen = 0;
+    uint64_t rel_gen = 0;
+    MeshStageSpan spans[6]{};
+    std::vector<uint32_t> handles;
+};
+thread_local std::unordered_map<uint64_t, MeshPick> mesh_picks;
+bool mesh_spans_written(const MeshPick& pk, uint32_t since_gen) {
+    if (!pk.nspans) return true;
+    for (uint8_t i = 0; i < pk.nspans; i++) {
+        const MeshStageSpan& sp = pk.spans[i];
+        if (!sp.ctl_guest || !sp.data_guest || !sp.data_bytes) return true;
+        if (memory_written_since(sp.ctl_guest, kControlSize, since_gen) ||
+            memory_written_since(sp.data_guest, sp.data_bytes, since_gen))
+            return true;
+    }
+    return false;
+}
+uint64_t mesh_pick_key(const NvnState& s, uint64_t stages, const uint8_t color_types[8], uint8_t dev_mode,
+                       uint8_t a2c, uint8_t alpha_func) {
+    uint64_t ct = 0;
+    std::memcpy(&ct, color_types, 8);
+    uint64_t h = stages * 1099511628211ull ^ ct;
+    h = h * 1099511628211ull ^ ((uint64_t)dev_mode << 16 | (uint64_t)a2c << 8 | alpha_func);
+    return h * 1099511628211ull ^ s.prog.serial;
+}
+const Program* mesh_program_for(const NvnState& s, const uint8_t color_types[8]) {
+    if (!s.has_prog || (!dev.mesh_shader && !dev.mesh_fallback)) return nullptr;
+    {
+        static thread_local int mesh_tonemap_seen = -1;
+        const int tonemap_now = scene_tonemap_on() ? 1 : 0;
+        if (tonemap_now != mesh_tonemap_seen) {
+            mesh_tonemap_seen = tonemap_now;
+            mesh_picks.clear();
+            mesh_fast[0].on = mesh_fast[1].on = false;
+        }
+    }
+    const uint8_t dev_mode = (uint8_t)((dev.mesh_shader ? 1u : 0u) | (dev.mesh_fallback ? 2u : 0u) |
+                                       (dev.task_mesh_fallback ? 4u : 0u));
+    const uint8_t a2c = s.ms.a2c, alpha_func = s.color.alpha_func;
+    const uint32_t mem_gen = memory_generation();
+    const uint64_t rel_gen = prog_release_gen.load(std::memory_order_acquire);
+    const uint64_t stages = prog_stage_sig(s.prog);
+    const uint64_t bind = s.bind_gen, reg = registrations_generation(), ub = ub_generation();
+    static const bool by_bind = env_on("RX_VK_PICK_BIND_GEN");
+    for (const MeshFast& f : mesh_fast) {
+        if (!(f.on && f.p && f.p->ready.load(std::memory_order_acquire) && !f.p->failed)) continue;
+        if (f.device != dev.device || f.dev_mode != dev_mode || f.mem_gen != mem_gen || f.rel_gen != rel_gen ||
+            f.a2c != a2c || f.alpha_func != alpha_func || f.prog.serial != s.prog.serial || f.stages != stages)
+            continue;
+        if (std::memcmp(f.ct, color_types, 8) != 0 || std::memcmp(&f.prog, &s.prog, sizeof(nvn_prog)) != 0) continue;
+        bool binds_ok = false;
+        if (!by_bind && f.amask == 0) {
+            binds_ok = true;
+        } else if (f.bind == bind && f.reg == reg && f.ub == ub) {
+            binds_ok = true;
+        } else if (!by_bind && f.amask != ~0u && f.reg == reg) {
+            binds_ok = true;
+            for (int k = 0; k < kNvnStages; k++)
+                if ((f.amask >> k & 1) && f.tex_gen[k] != s.tex_gen[k]) binds_ok = false;
+        }
+        if (binds_ok) return f.p;
+    }
+    const uint64_t key = mesh_pick_key(s, stages, color_types, dev_mode, a2c, alpha_func);
+    MeshPick& pk = mesh_picks[key];
+    auto keep = [&](const Program* p) {
+        if (!p || !p->ready.load(std::memory_order_acquire) || p->failed) return p;
+        if (!(mesh_fast[0].on && mesh_fast[0].p == p)) mesh_fast[1] = mesh_fast[0];
+        MeshFast& f = mesh_fast[0];
+        f.on = true, f.dev_mode = dev_mode, f.a2c = a2c, f.alpha_func = alpha_func;
+        f.mem_gen = mem_gen, f.rel_gen = rel_gen, f.device = dev.device;
+        f.prog = s.prog, f.stages = stages, f.bind = bind, f.reg = reg, f.ub = ub;
+        f.p = p, f.amask = mesh_answer_stage_mask(*p);
+        std::memcpy(f.tex_gen, s.tex_gen, sizeof f.tex_gen);
+        std::memcpy(f.ct, color_types, sizeof f.ct);
+        return p;
+    };
+    bool refresh_codes = false;
+    if (pk.p && pk.p->ready.load(std::memory_order_acquire) && !pk.p->failed && pk.device == dev.device &&
+        pk.rel_gen == rel_gen && pk.dev_mode == dev_mode && pk.a2c == a2c && pk.alpha_func == alpha_func &&
+        std::memcmp(pk.ct, color_types, 8) == 0 && std::memcmp(&pk.prog, &s.prog, sizeof(nvn_prog)) == 0) {
+        if (pk.mem_gen != mem_gen) {
+            if (mesh_spans_written(pk, pk.mem_gen)) {
+                pk.p = nullptr;
+                refresh_codes = true;
+            } else {
+                pk.mem_gen = mem_gen;
+            }
+        }
+        if (pk.p) {
+            if (pk.p->answers.empty()) return keep(pk.p);
+            static thread_local std::vector<uint32_t> now;
+            answer_handles(s, *pk.p, now);
+            if (now == pk.handles) return keep(pk.p);
+            if (still_valid(s, *pk.p)) {
+                pk.handles.swap(now);
+                return keep(pk.p);
+            }
+        }
+    }
+    const Program* picked = nullptr;
+    MeshStageSpan spans[6]{};
+    uint8_t nspans = 0;
+    {
+        PROF_EXACT();
+        ParLock plk;
+        std::lock_guard lk(shader_mu);
+        if (refresh_codes) codes.erase(s.prog.serial);
+        picked = mesh_program_locked(s, color_types);
+        if (picked) {
+            const auto it = codes.find(s.prog.serial);
+            const uint32_t expected = std::min<uint32_t>(s.prog.nstage, 6);
+            if (it != codes.end() && it->second.size() == expected) {
+                nspans = (uint8_t)expected;
+                for (uint32_t i = 0; i < expected; i++) {
+                    spans[i].ctl_guest = it->second[i].ctl_guest;
+                    spans[i].data_guest = it->second[i].data_guest;
+                    spans[i].data_bytes = it->second[i].area_bytes;
+                }
+            }
+        }
+    }
+    if (picked && picked->ready.load(std::memory_order_acquire) && !picked->failed) {
+        pk.p = picked, pk.device = dev.device, pk.prog = s.prog;
+        std::memcpy(pk.ct, color_types, 8);
+        pk.dev_mode = dev_mode, pk.a2c = a2c, pk.alpha_func = alpha_func;
+        pk.mem_gen = mem_gen, pk.rel_gen = rel_gen, pk.nspans = nspans;
+        std::memcpy(pk.spans, spans, sizeof spans);
+        answer_handles(s, *picked, pk.handles);
+    } else {
+        pk.p = nullptr;
+    }
+    if (mesh_picks.size() > 65536) mesh_picks.clear();
+    return keep(picked);
+}
+} // namespace
+
 const Program* program_for(const NvnState& s, ProgramKind kind, const uint8_t color_types[8]) {
     if (!s.has_prog) return nullptr;
     if (kind == ProgramKind::Mesh) return mesh_program_for(s, color_types);
@@ -1847,6 +2028,8 @@ const Program* program_for(const NvnState& s, ProgramKind kind, const uint8_t co
             tonemap_seen = tonemap_now;
             picks.clear();
             prog_fast[0].on = prog_fast[1].on = false;
+            mesh_picks.clear();
+            mesh_fast[0].on = mesh_fast[1].on = false;
         }
     }
     const bool compute = kind == ProgramKind::Compute;
@@ -2447,6 +2630,7 @@ double shader_translate_ms() {
 
 void program_released(const nvn_prog* p) {
     if (!p) return;
+    prog_release_gen.fetch_add(1, std::memory_order_acq_rel);
     std::lock_guard lk(shader_mu);
     codes.erase(p->serial);
 }

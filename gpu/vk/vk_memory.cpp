@@ -667,22 +667,34 @@ void stamp_page(uint64_t p, uint32_t g) {
 }
 } // namespace
 
-namespace { void cap_view_bump(); }   // (defined with cap_view_gen below, in this file's anonymous namespace)
+namespace {
+void cap_view_bump();   // (defined with cap_view_gen below, in this file's anonymous namespace)
+bool cap_taken_for_collect = false;   // (replay_mu: this submit's memory_take_capture took a capture)
+std::atomic<int64_t> captures_pending{0};   // (non-null captures queued in `captures` and not yet popped)
+void shadow_drop_pages(const uint32_t* pages, int64_t n);
+}
 const std::vector<std::pair<uint64_t, uint64_t>>& capture_ranges_merged();
 void shadow_written(const uint32_t* pages, int64_t n);   // (the write-back's diff, below: pages the captures took)
 void shadow_written_collected(const uint32_t* pages, int64_t n);   // (the write-back's diff, below: pages the collection found)
 void memory_collect_written() {
+    const bool took = std::exchange(cap_taken_for_collect, false);
+    const bool defer = took || captures_pending.load(std::memory_order_relaxed) > 0;
     uint32_t* pages = nullptr;
     const int64_t n = host->collect_written(&pages);
     if (n > 0) {
         const uint32_t g = ++gen_now;
         // (the captured ranges once a call: a lock, a pool-list refresh and three searches for every dirty page cost the
-        // replay thousands of lock cycles a submit, the cost that retired gpu_pages' lock below)
-        const auto& owned = capture_ranges_merged();
+        // replay thousands of lock cycles a submit, the cost that retired gpu_pages' lock below. Only when this submit took a
+        // capture (or a later queued submit already captured): an uncaptured submit must stamp every written page itself and
+        // drop any older shadow copy of it)
+        static const std::vector<std::pair<uint64_t, uint64_t>> no_owned;
+        const auto& owned = defer ? capture_ranges_merged() : no_owned;
         const auto in_capture = [&owned](uint64_t guest) {
             auto it = std::upper_bound(owned.begin(), owned.end(), std::make_pair(guest, ~uint64_t(0)));
             return it != owned.begin() && guest < std::prev(it)->second;
         };
+        static thread_local std::vector<uint32_t> stamped;
+        stamped.clear();
         for (int64_t i = 0; i < n; i++) {
             const uint64_t guest = (uint64_t)pages[i] << kPageShift;
             if (!owned.empty() && in_capture(guest)) {   // (written after its submit's capture: the next capture takes it, as it is then)
@@ -691,7 +703,9 @@ void memory_collect_written() {
                 continue;
             }
             stamp_page(pages[i], g);
+            stamped.push_back(pages[i]);
         }
+        if (!stamped.empty()) shadow_drop_pages(stamped.data(), (int64_t)stamped.size());
         pages_collected += (uint64_t)n;
         cap_view_bump();
         // (hookshot) every page the CPU wrote, captured later or not: unknown to the write-back diff's shadows before this
@@ -832,6 +846,7 @@ struct Capture {
     void* map = nullptr;
     uint64_t bsize = 0;
     size_t nbytes = 0;
+    std::vector<uint8_t> host_buf;   // (deferred texture-only capture when !pool_capture_on(): no VkBuffer/VmaAllocation)
     std::vector<uint32_t> late;      // (indices into pages: copied again by the replay once late_value is done)
     uint64_t late_value = 0;
     // (hookshot) "shadow staging": the texture pages of this capture, copied from guest memory into ordinary cached RAM too, for
@@ -1083,8 +1098,27 @@ uint64_t eager_captures() {
     static const uint64_t v = getenv("RX_VK_CAPTURE_EAGER") ? (uint64_t)atoll(getenv("RX_VK_CAPTURE_EAGER")) : 0;
     return v;
 }
+bool mirror_on();
+bool capture_on() {
+    static const bool on = [] {
+        const char* e = getenv("RX_VK_CAPTURE");
+        const bool v = e && e[0] ? atoi(e) != 0 : true;
+        logf("vk: submit-time capture of written pages %s",
+             !v ? "off" : (e && e[0] ? "on" : (mirror_on() ? "on" : "deferred textures only (no VRAM mirrors)")));
+        return v;
+    }();
+    return on;
+}
+/// (unified-memory iGPUs (!mirror_on()) have no VRAM mirrors reading CapBufs or pool_cap_ranges: off unless RX_VK_CAPTURE=1)
+bool pool_capture_on() {
+    static const bool on = [] {
+        const char* e = getenv("RX_VK_CAPTURE");
+        return capture_on() && (e && e[0] ? atoi(e) != 0 : mirror_on());
+    }();
+    return on;
+}
 void refresh_pool_ranges_locked() {   // (cap_ranges_mu held)
-    if (!capture_pool_max()) return;
+    if (!pool_capture_on() || !capture_pool_max()) return;
     const uint32_t g = host->maps_generation();
     if (g == pool_cap_gen && captures_made - pool_cap_built < 64) return;   // (and every 64: the old ones out)
     pool_cap_gen = g, pool_cap_built = captures_made;
@@ -1111,16 +1145,7 @@ void refresh_pool_ranges_locked() {   // (cap_ranges_mu held)
     }
     pool_cap_ranges.swap(m);
 }
-bool capture_on() {
-    static const bool on = [] {
-        const char* e = getenv("RX_VK_CAPTURE");
-        const bool v = e ? atoi(e) != 0 : true;
-        logf("vk: submit-time capture of written pages %s", v ? "on" : "off");
-        return v;
-    }();
-    return on;
-}
-std::atomic<bool> captures_seen{false};
+std::atomic<bool> captures_seen{false}, cap_bufs_seen{false};
 std::atomic<uint64_t> cap_view_gen{1};   // (bumped when a capture is published or a page is stamped: cached reads go stale)
 void cap_view_bump() { cap_view_gen.fetch_add(1, std::memory_order_release); }
 double st_tk_all, st_tk_stamp, st_tk_copy, st_tk_late, st_tk_lock;   // (memory_take_capture's parts, ms)
@@ -1174,6 +1199,14 @@ void shadow_erase(uint32_t page) {   // (shadow_mu held)
     auto r = shadow_regions.find(page >> 9);
     if (r != shadow_regions.end() && --r->second == 0) shadow_regions.erase(r);
     shadow_n--;
+}
+void shadow_drop_pages(const uint32_t* pages, int64_t n) {
+    if (n <= 0 || !shadow_n.load(std::memory_order_relaxed)) return;
+    std::lock_guard lk(shadow_mu);
+    for (int64_t i = 0; i < n; i++) {
+        if (!shadow_regions.count(pages[i] >> 9)) continue;
+        shadow_erase(pages[i]);
+    }
 }
 void shadow_drop_range(uint64_t lo, uint64_t hi) {   // (shadow_mu held)
     if (hi <= lo) return;
@@ -1269,7 +1302,7 @@ bool memory_read_as_submitted(uint64_t gpu, void* dst, uint64_t n) {
     // (once a capture exists, every uniform word took pools_mu to ask whether its page was in one. A page in none keeps
     // that answer until a stamp or a new capture)
     if (!host->gpu_read(gpu, dst, n)) return false;
-    if (!n || !capture_on() || !captures_seen.load(std::memory_order_relaxed)) return true;
+    if (!n || !capture_on() || !cap_bufs_seen.load(std::memory_order_relaxed)) return true;
     const uint64_t guest = gpu < (1ull << 40) ? gpu : host->gpu_guest(gpu);
     if (!guest) return true;
     const uint64_t page0 = guest >> kPageShift, page1 = (guest + n - 1) >> kPageShift;
@@ -1699,14 +1732,18 @@ std::unique_ptr<Capture> capture_make();
 void shadow_free(Pool& p);
 void shadow_forget(Pool& p, uint64_t at, uint64_t len);   // (the write-back's diff, below: a range its shadow no longer knows)
 void memory_capture_submit() {
+    if (!pool_capture_on() && !tex_capture_on()) return;
     std::unique_ptr<Capture> c = capture_make();
-    if (!c) return;
+    // (keep a 1-to-1 FIFO slot per queued submit even when capture_make returns nullptr while mirrored.empty(): under
+    // RX_VK_ASYNC=1 an earlier submit must pop its own empty slot rather than stealing a later submit's capture)
     std::lock_guard lk(cap_mu);
+    if (c) captures_pending.fetch_add(1, std::memory_order_relaxed);
     captures.push_back(std::move(c));
 }
 /// (the pages the CPU wrote since the last capture, copied now: a submit's capture, or memory_capture_now's)
 std::unique_ptr<Capture> capture_make() {
-    if (!capture_on()) return nullptr;
+    const bool pools = pool_capture_on();
+    if (!pools && !tex_capture_on()) return nullptr;
     const auto t0 = std::chrono::steady_clock::now();
     std::unique_ptr<Capture> c;
     {
@@ -1727,13 +1764,14 @@ std::unique_ptr<Capture> capture_make() {
     {   // (and the texture storage the replay uploads from: see "texture storage in the capture"; and the small pools)
         std::lock_guard lk(cap_ranges_mu);
         captures_made++;
-        refresh_pool_ranges_locked();
+        if (pools) refresh_pool_ranges_locked();
         static thread_local uint64_t ver = 0;
         if (ver != cap_ranges_ver) {   // (the three lists overlap: their union, sorted, once each time one changes)
             ver = cap_ranges_ver;
-            std::vector<std::pair<uint64_t, uint64_t>> all = cap_ranges;
-            all.insert(all.end(), tex_cap_ranges.begin(), tex_cap_ranges.end());
-            all.insert(all.end(), pool_cap_ranges.begin(), pool_cap_ranges.end());
+            std::vector<std::pair<uint64_t, uint64_t>> all;
+            if (pools) all = cap_ranges;
+            if (tex_capture_on()) all.insert(all.end(), tex_cap_ranges.begin(), tex_cap_ranges.end());
+            if (pools) all.insert(all.end(), pool_cap_ranges.begin(), pool_cap_ranges.end());
             std::sort(all.begin(), all.end());
             mirrored.clear();
             for (const auto& r : all) {
@@ -1752,6 +1790,15 @@ std::unique_ptr<Capture> capture_make() {
             texr.resize(m);
         }
     }
+    if (!pools && mirrored.empty()) return nullptr;
+    std::unique_ptr<Capture> c;
+    {
+        std::lock_guard lk(cap_mu);
+        if (!spare.empty()) c = std::move(spare.back()), spare.pop_back();
+    }
+    if (!c) c = std::make_unique<Capture>();
+    c->pages.clear(), c->copied.clear(), c->slots.clear(), c->nbytes = 0, c->late.clear(), c->late_value = 0;
+    if (c->map) cap_buf_free(c->buffer, c->alloc, c->map, c->bsize), c->buffer = VK_NULL_HANDLE, c->map = nullptr;
     captures_seen.store(true, std::memory_order_relaxed);
     const auto t_lock = std::chrono::steady_clock::now();
     uint32_t* pages = nullptr;
@@ -1850,14 +1897,16 @@ const std::vector<std::pair<uint64_t, uint64_t>>& capture_ranges_merged() {
     static thread_local uint64_t ver = ~uint64_t(0);
     // (no capture is ever made without the replay thread (RX_VK_ASYNC=0): the mirrored pools' writes were left for one
     // that never came, and the pools kept their first contents: a grey world)
-    if (!capture_on() || !captures_seen.load(std::memory_order_relaxed)) return none;
+    const bool pools = pool_capture_on();
+    if ((!pools && !tex_capture_on()) || !captures_seen.load(std::memory_order_relaxed)) return none;
     std::lock_guard lk(cap_ranges_mu);
-    refresh_pool_ranges_locked();   // (a pool made since the last capture: the next one takes its pages, not this)
+    if (pools) refresh_pool_ranges_locked();   // (a pool made since the last capture: the next one takes its pages, not this)
     if (ver != cap_ranges_ver) {
         ver = cap_ranges_ver;
-        std::vector<std::pair<uint64_t, uint64_t>> all = cap_ranges;
-        all.insert(all.end(), tex_cap_ranges.begin(), tex_cap_ranges.end());
-        all.insert(all.end(), pool_cap_ranges.begin(), pool_cap_ranges.end());
+        std::vector<std::pair<uint64_t, uint64_t>> all;
+        if (pools) all = cap_ranges;
+        if (tex_capture_on()) all.insert(all.end(), tex_cap_ranges.begin(), tex_cap_ranges.end());
+        if (pools) all.insert(all.end(), pool_cap_ranges.begin(), pool_cap_ranges.end());
         std::sort(all.begin(), all.end());
         merged.clear();
         for (const auto& r : all) {
@@ -1918,6 +1967,14 @@ bool take_capture(std::unique_ptr<Capture> c, uint64_t value, uint64_t completed
         for (uint32_t i : c->late)
             guarded_copy((uint8_t*)c->map + (uint64_t)i * 4096, base + ((uint64_t)c->pages[i] << kPageShift), 4096);
         flush_mapped(c->alloc, c->nbytes);
+    } else if (c->late_value && !c->host_buf.empty()) {
+        const auto tw = std::chrono::steady_clock::now();
+        vk_timeline_wait(c->late_value);
+        st_tk_late += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tw).count();
+        st_tk_late_n++;
+        uint8_t* const base = (uint8_t*)host->guest_base();
+        for (uint32_t i : c->late)
+            guarded_copy(c->host_buf.data() + (uint64_t)i * 4096, base + ((uint64_t)c->pages[i] << kPageShift), 4096);
     }
     const auto tl = std::chrono::steady_clock::now();
     std::lock_guard lk(pools_mu);
@@ -1968,13 +2025,14 @@ bool take_capture(std::unique_ptr<Capture> c, uint64_t value, uint64_t completed
                     if (in_tex_merged((uint64_t)p << 12)) shadow_erase(p);
                 }
             }
+            const uint8_t* const src = c->map ? (const uint8_t*)c->map : (c->host_buf.empty() ? nullptr : c->host_buf.data());
             bool swept = false;
             static int64_t st_takes, st_from_stage, st_from_map, st_cached;   // (the shadow copies by source and the takes whose buffer was cached, logged every 600 takes; shadow_mu)
             int64_t from_stage = 0, from_map = 0;
             static thread_local std::vector<CopyPair> pairs;   // (the copies, made together once the slots are known)
             pairs.clear();
             size_t i = 0;
-            for (; i < c->copied.size(); i++) {
+            for (; src && i < c->copied.size(); i++) {
                 const uint32_t p = c->copied[i];
                 if (!in_tex_merged((uint64_t)p << 12)) continue;
                 if (shadow_n.load(std::memory_order_relaxed) >= kShadowMax && !shadow.count(p)) {
@@ -2022,10 +2080,12 @@ bool take_capture(std::unique_ptr<Capture> c, uint64_t value, uint64_t completed
         cap_bytes += b.size;
         cur_cap_gen = g;
         for (size_t i = 0; i < c->copied.size(); i++) cap_entry_set(c->copied[i], CapEntry{g, c->slots[i]});
+        cap_bufs_seen.store(true, std::memory_order_relaxed);
     }
     cap_view_bump();
     stage_put(*c);   // (the shadow's copies from it are done: copy_pairs returned)
     if (c->map) cap_buf_free(c->buffer, c->alloc, c->map, c->bsize), c->buffer = VK_NULL_HANDLE, c->map = nullptr;
+    if (c->host_buf.capacity() > (4ull << 20)) std::vector<uint8_t>().swap(c->host_buf);
     {
         std::lock_guard lk(cap_mu);
         if (spare.size() < 8) spare.push_back(std::move(c));
@@ -2047,6 +2107,7 @@ bool take_capture(std::unique_ptr<Capture> c, uint64_t value, uint64_t completed
     return true;
 }
 bool memory_take_capture(uint64_t value, uint64_t completed) {
+    cap_taken_for_collect = false;
     if (completed > mem_completed) mem_completed = completed;
     if (!capture_on()) return false;
     std::unique_ptr<Capture> c;
@@ -2056,7 +2117,10 @@ bool memory_take_capture(uint64_t value, uint64_t completed) {
         c = std::move(captures.front());
         captures.pop_front();
     }
-    return take_capture(std::move(c), value, completed);
+    if (!c) return false;
+    captures_pending.fetch_sub(1, std::memory_order_relaxed);
+    cap_taken_for_collect = take_capture(std::move(c), value, completed);
+    return cap_taken_for_collect;
 }
 /// (hookshot) A capture made and taken at once, for a submission going on from a wait the CPU's signal met
 /// (vk_replay.cpp resume_queue): the CPU's writes up to that signal, which the console's GPU reads after its wait
@@ -2064,6 +2128,62 @@ bool memory_capture_now(uint64_t value, uint64_t completed) {
     if (completed > mem_completed) mem_completed = completed;
     std::unique_ptr<Capture> c = capture_make();
     return c && take_capture(std::move(c), value, completed);
+}
+/// True when buffer pools and CapBufs are captured at every submit (VRAM mirrors on, or RX_VK_CAPTURE=1)
+bool memory_pool_capture_on() {
+    return pool_capture_on();
+}
+/// When an unblocked synchronous submit (!pool_capture_on()) stops mid-way at an unmet event wait, shadow the texture
+/// storage pages written since gen0 so the deferred tail reads them as submitted (replay_mu held)
+void memory_shadow_since(uint32_t gen0) {
+    if (pool_capture_on() || !tex_capture_on()) return;
+    publish_tex_spans(texture_frame_no());
+    std::lock_guard sk(shadow_mu);
+    if (tex_merged.empty()) return;
+    uint8_t* const base = (uint8_t*)host->guest_base();
+    const uint64_t gsize = host->guest_size();
+    bool bumped = false, swept = false;
+    for (const auto& [lo, hi] : tex_merged) {
+        if (hi <= lo) continue;
+        const uint64_t p_lo = lo >> kPageShift, p_hi = std::min((hi + 4095) >> kPageShift, kPages);
+        if (p_lo >= p_hi) continue;
+        for (uint64_t r = p_lo / kRegionPages; r <= (p_hi - 1) / kRegionPages; r++) {
+            if (region_gen[r] <= gen0) continue;
+            const bool full = load_u32(region_full[r]) > gen0;
+            const uint64_t a = std::max(p_lo, r * kRegionPages);
+            const uint64_t b = std::min(p_hi, (r + 1) * kRegionPages);
+            for (uint64_t p = a; p < b; p++) {
+                if (!full && page_gen(p) <= gen0) continue;
+                if (!bumped) shadow_seq++, bumped = true;
+                const uint64_t ga = p << kPageShift;
+                if (ga + 4096 > gsize) { shadow_erase((uint32_t)p); continue; }
+                if (shadow_n.load(std::memory_order_relaxed) >= kShadowMax && !shadow.count((uint32_t)p)) {
+                    if (!swept) {
+                        swept = true;
+                        for (auto it = shadow.begin(); it != shadow.end();) {
+                            if (it->second.seq + 64 >= shadow_seq) { ++it; continue; }
+                            auto rg = shadow_regions.find(it->first >> 9);
+                            if (rg != shadow_regions.end() && --rg->second == 0) shadow_regions.erase(rg);
+                            it = shadow.erase(it);
+                            shadow_n--;
+                        }
+                    }
+                    if (shadow_n.load(std::memory_order_relaxed) >= kShadowMax) {
+                        shadow_erase((uint32_t)p);
+                        continue;
+                    }
+                }
+                ShadowPage& slot = shadow[(uint32_t)p];
+                if (!slot.b) {
+                    slot.b.reset(new uint8_t[4096]);
+                    shadow_regions[(uint32_t)(p >> 9)]++;
+                    shadow_n++;
+                }
+                slot.seq = shadow_seq;
+                if (!guarded_copy(slot.b.get(), base + ga, 4096)) shadow_erase((uint32_t)p);
+            }
+        }
+    }
 }
 
 namespace {

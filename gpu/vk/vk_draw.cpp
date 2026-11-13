@@ -4285,11 +4285,39 @@ bool targets_persistent(const Targets& at) {
     return at.depth && at.depth->first_render_frame && at.depth->first_render_frame < now;
 }
 
+thread_local bool pass_paused_for_mesh_conv = false;
+void pass_resume_attachment_barrier(VkCommandBuffer cmd, const Targets& at) {
+    VkPipelineStageFlags2 src_stage = 0, dst_stage = 0;
+    VkAccessFlags2 src_access = 0, dst_access = 0;
+    if (at.n > 0) {
+        src_stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dst_stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        src_access |= VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        dst_access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    }
+    if (at.depth) {
+        src_stage |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        dst_stage |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        src_access |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        dst_access |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    }
+    if (!src_stage) return;
+    VkMemoryBarrier2 b{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    b.srcStageMask = src_stage, b.srcAccessMask = src_access;
+    b.dstStageMask = dst_stage, b.dstAccessMask = dst_access;
+    VkDependencyInfo d{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    d.memoryBarrierCount = 1, d.pMemoryBarriers = &b;
+    vkCmdPipelineBarrier2(cmd, &d);
+}
+
 void begin_pass(VkCommandBuffer cmd, const Targets& at) {
     bool same = pass().open && pass().depth == at.depth_view && pass().n == at.n && pass().width == at.width &&
                 pass().height == at.height;
     for (int i = 0; i < at.n && same; i++) same = pass().color[i] == at.color_view[i];
-    if (same) return;
+    if (same) {
+        pass_paused_for_mesh_conv = false;
+        return;
+    }
     end_pass(cmd);
     if (at.has_block_images) {
         full_barrier(cmd, "barrier (before BC slice loads)");
@@ -4297,9 +4325,12 @@ void begin_pass(VkCommandBuffer cmd, const Targets& at) {
             if (at.block_image[i])
                 copy_block_attachment(cmd, *at.color[i], at.block_image[i], at.color_level[i], at.color_layer[i], true);
         full_barrier(cmd, "barrier (after BC slice loads)");
+    } else if (pass_paused_for_mesh_conv) {
+        pass_resume_attachment_barrier(cmd, at);
     } else {
         pass_start_barrier(cmd);   // (what the pass before wrote, and the transfers before it: vk_texture.cpp)
     }
+    pass_paused_for_mesh_conv = false;
     work_since_barrier = true;
     VkRenderingAttachmentInfo ca[8]{};
     bool marks = !texture_marked(at.depth);
@@ -6048,53 +6079,120 @@ constexpr uint64_t kMeshRing = 4ull << 20;
 VkBuffer mesh_ring = VK_NULL_HANDLE;
 VmaAllocation mesh_ring_mem = nullptr;
 std::mutex mesh_ring_mu;
-uint64_t mesh_ring_at = 0;
+std::atomic<bool> mesh_ring_ready{false};
+std::atomic<uint64_t> mesh_ring_at{0};
 thread_local VkBuffer mesh_conv_buf = VK_NULL_HANDLE;   // (the converted records for the draw in progress)
 thread_local uint64_t mesh_conv_off = 0;
+thread_local VkBuffer mesh_conv_cnt_buf = VK_NULL_HANDLE;
+thread_local uint64_t mesh_conv_cnt_off = 0;
 bool mesh_indirect_convert(VkCommandBuffer cmd, const DrawArgs& d) {
     mesh_conv_buf = VK_NULL_HANDLE;
+    mesh_conv_cnt_buf = VK_NULL_HANDLE;
     static const bool raw = getenv("RX_VK_MESH_IND_RAW") && atoi(getenv("RX_VK_MESH_IND_RAW")) != 0;
     static const uint32_t word = getenv("RX_VK_MESH_IND_COUNT_WORD") ? (uint32_t)atoi(getenv("RX_VK_MESH_IND_COUNT_WORD")) & 3 : 0;
     // (amd-fix: the rewrite with the firsts in the draw does it, RX_VK_MESH_ARGS; this one drew every draw from its first 0)
     static const bool rewrite = getenv("RX_VK_MESH_ARGS") && atoi(getenv("RX_VK_MESH_ARGS")) != 0;   // (sharkiix version: off, as upstream)
     if (raw || rewrite || !d.mesh || !d.indirect) return false;
-    PROF_EXACT();   // (a pass ended and three barriers: not one of the cheap per-draw steps PROF_DRAW samples)
+    PROF_EXACT();   // (a pass ended and transfer conversion: not one of the cheap per-draw steps PROF_DRAW samples)
     const uint32_t n = (uint32_t)std::clamp(d.max, 1, 4096);
     const uint32_t stride = d.stride > 0 ? (uint32_t)d.stride : 8;
-    const BufferRef args = gpu_buffer_bind(d.indirect, (uint64_t)(n - 1) * stride + 4 * (word + 1), false);
+    const uint64_t args_bytes = (uint64_t)(n - 1) * stride + 4 * (word + 1);
+    const BufferRef args = gpu_buffer_bind(d.indirect, args_bytes, false);
     if (!args) return false;
-    uint64_t off;
-    {
+    const BufferRef cnt = (d.count_addr && vkCmdDrawMeshTasksIndirectCountEXT) ? gpu_buffer_bind(d.count_addr, 4, false) : BufferRef{};
+    if (!mesh_ring_ready.load(std::memory_order_acquire)) {
         std::lock_guard lk(mesh_ring_mu);
-        if (!mesh_ring) {
+        if (!mesh_ring_ready.load(std::memory_order_relaxed)) {
             void* unused = nullptr;
             if (!create_buffer(kMeshRing, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, false, mesh_ring,
                                mesh_ring_mem, &unused))
                 return false;
+            mesh_ring_ready.store(true, std::memory_order_release);
         }
-        const uint64_t bytes = ((uint64_t)n * 12 + 15) & ~15ull;
-        if (mesh_ring_at + bytes > kMeshRing) mesh_ring_at = 0;   // (4 MB: frames of draws before it comes round)
-        off = mesh_ring_at;
-        mesh_ring_at += bytes;
+    }
+    const uint64_t bytes = ((uint64_t)n * 12 + 15) & ~15ull;
+    uint64_t off = 0;
+    bool wrapped = false;
+    for (;;) {
+        uint64_t cur_at = mesh_ring_at.load(std::memory_order_relaxed);
+        const bool wrap = cur_at + bytes > kMeshRing;   // (4 MB: frames of draws before it comes round)
+        const uint64_t base = wrap ? 0 : cur_at;
+        if (mesh_ring_at.compare_exchange_weak(cur_at, base + bytes, std::memory_order_relaxed)) {
+            off = base, wrapped = wrap;
+            break;
+        }
     }
     end_pass(cmd);
-    VkMemoryBarrier2 mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
-    VkDependencyInfo di{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    di.memoryBarrierCount = 1, di.pMemoryBarriers = &mb;
-    mb.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, mb.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-    mb.dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, mb.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier2(cmd, &di);
-    vkCmdFillBuffer(cmd, mesh_ring, off, (uint64_t)n * 12, 1u);
-    mb.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, mb.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    mb.dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, mb.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier2(cmd, &di);
-    static thread_local std::vector<VkBufferCopy> regions;
-    regions.resize(n);
-    for (uint32_t i = 0; i < n; i++) regions[i] = {args.offset + (uint64_t)i * stride + 4 * word, off + (uint64_t)i * 12, 4};
-    vkCmdCopyBuffer(cmd, args.buffer, mesh_ring, n, regions.data());
-    mb.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, mb.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    mb.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, mb.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-    vkCmdPipelineBarrier2(cmd, &di);
+    VkBufferMemoryBarrier2 pre[2]{};
+    pre[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+    pre[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+    pre[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_HOST_WRITE_BIT;
+    pre[0].dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    pre[0].dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+    pre[0].srcQueueFamilyIndex = pre[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    pre[0].buffer = args.buffer, pre[0].offset = args.offset, pre[0].size = args_bytes;
+    uint32_t pre_n = 1;
+    if (wrapped) {
+        pre[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        pre[1].srcStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+        pre[1].srcAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+        pre[1].dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        pre[1].dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        pre[1].srcQueueFamilyIndex = pre[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[1].buffer = mesh_ring, pre[1].offset = 0, pre[1].size = kMeshRing;
+        pre_n = 2;
+    }
+    VkDependencyInfo pre_di{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    pre_di.bufferMemoryBarrierCount = pre_n, pre_di.pBufferMemoryBarriers = pre;
+    vkCmdPipelineBarrier2(cmd, &pre_di);
+    if (n == 1) {
+        // Fill writes [off + 4, off + 12) while copy writes [off, off + 4): strictly disjoint byte ranges, no middle barrier.
+        vkCmdFillBuffer(cmd, mesh_ring, off + 4, 8, 1u);
+        const VkBufferCopy region{args.offset + 4u * word, off, 4};
+        vkCmdCopyBuffer(cmd, args.buffer, mesh_ring, 1, &region);
+    } else if (n <= 8) {
+        VkBufferCopy regions_small[8];
+        for (uint32_t i = 0; i < n; i++) {
+            vkCmdFillBuffer(cmd, mesh_ring, off + (uint64_t)i * 12 + 4, 8, 1u);
+            regions_small[i] = {args.offset + (uint64_t)i * stride + 4u * word, off + (uint64_t)i * 12, 4};
+        }
+        vkCmdCopyBuffer(cmd, args.buffer, mesh_ring, n, regions_small);
+    } else {
+        vkCmdFillBuffer(cmd, mesh_ring, off, (uint64_t)n * 12, 1u);
+        VkBufferMemoryBarrier2 mid{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+        mid.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT, mid.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        mid.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT, mid.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        mid.srcQueueFamilyIndex = mid.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        mid.buffer = mesh_ring, mid.offset = off, mid.size = (uint64_t)n * 12;
+        VkDependencyInfo mid_di{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        mid_di.bufferMemoryBarrierCount = 1, mid_di.pBufferMemoryBarriers = &mid;
+        vkCmdPipelineBarrier2(cmd, &mid_di);
+        static thread_local std::vector<VkBufferCopy> regions;
+        regions.resize(n);
+        for (uint32_t i = 0; i < n; i++) regions[i] = {args.offset + (uint64_t)i * stride + 4u * word, off + (uint64_t)i * 12, 4};
+        vkCmdCopyBuffer(cmd, args.buffer, mesh_ring, n, regions.data());
+    }
+    VkBufferMemoryBarrier2 post[2]{};
+    post[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+    post[0].srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT, post[0].srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    post[0].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, post[0].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+    post[0].srcQueueFamilyIndex = post[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    post[0].buffer = mesh_ring, post[0].offset = off, post[0].size = (uint64_t)n * 12;
+    uint32_t post_n = 1;
+    if (cnt) {
+        post[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        post[1].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+        post[1].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_HOST_WRITE_BIT;
+        post[1].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+        post[1].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+        post[1].srcQueueFamilyIndex = post[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post[1].buffer = cnt.buffer, post[1].offset = cnt.offset, post[1].size = 4;
+        post_n = 2;
+        mesh_conv_cnt_buf = cnt.buffer, mesh_conv_cnt_off = cnt.offset;
+    }
+    VkDependencyInfo post_di{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    post_di.bufferMemoryBarrierCount = post_n, post_di.pBufferMemoryBarriers = post;
+    vkCmdPipelineBarrier2(cmd, &post_di);
     mesh_conv_buf = mesh_ring, mesh_conv_off = off;
     return true;
 }
@@ -6723,7 +6821,8 @@ void draw(VkCommandBuffer cmd, NvnState& s, const DrawArgs& d) {
     PROF_HOT(PROF_DRAW);
     FINE_N(FC_DRAWS, 1);
     stats_tick();
-    mesh_indirect_convert(cmd, d);   // (EvilOOT: before the pass opens; sets mesh_conv_buf for the mesh draw below)
+    mesh_conv_buf = VK_NULL_HANDLE;
+    mesh_conv_cnt_buf = VK_NULL_HANDLE;
     VkPrimitiveTopology topo = kMeshDrawTopology;
     if (!d.mesh && !topology(d.prim, topo)) {
         static int logged[32];
@@ -6744,7 +6843,6 @@ void draw(VkCommandBuffer cmd, NvnState& s, const DrawArgs& d) {
     ProgramUse use(s.prog, s.has_prog, false);   // (the program's first draw, for the census: vk_programs.h)
     {
         PROF_HOT(PROF_PROGRAM);
-        ParLock lk(d.mesh);   // (graphics programs: each thread's picks, program_pick's own lock)
         cp = program_for(s, d.mesh ? ProgramKind::Mesh : ProgramKind::Graphics, types);
     }
     if (use.on) use.program(cp, cp && cp->ready.load(std::memory_order_acquire));
@@ -7100,6 +7198,13 @@ void draw(VkCommandBuffer cmd, NvnState& s, const DrawArgs& d) {
     }
     const FallbackRole fallback_role = p.fallback && d.mesh ? fallback_role_of(p, s, at, d) : FallbackRole::None;
     if (fallback_role == FallbackRole::DepthOnly && fallback_list_held(d.indirect)) SKIP_HERE();
+    bool same_open_pass = !p.fallback && !at.has_block_images && !dump_on() && !probe_on() && pass().open &&
+                          pass().depth == at.depth_view && pass().n == at.n && pass().width == at.width &&
+                          pass().height == at.height;
+    for (int i = 0; i < at.n && same_open_pass; i++) same_open_pass = pass().color[i] == at.color_view[i];
+    const uint16_t prev_sampled_targets = same_open_pass ? pass().sampled_targets : 0;
+    const uint16_t prev_written = same_open_pass ? pass().written : 0;
+    const bool converted = mesh_indirect_convert(cmd, d);   // (EvilOOT: before the pass opens; sets mesh_conv_buf for the mesh draw below)
     if (p.fallback && d.mesh && !fallback_record(cmd, p, d)) {
         if (fallback_role == FallbackRole::Colour && p.compute_state.load(std::memory_order_acquire) == 1)
             fallback_list_hold(d.indirect, true);
@@ -7108,7 +7213,13 @@ void draw(VkCommandBuffer cmd, NvnState& s, const DrawArgs& d) {
     if (fallback_role == FallbackRole::Colour) fallback_list_hold(d.indirect, false);
     {
         FINE_SCOPE(FT_HAZARD);
+        pass_paused_for_mesh_conv = converted && same_open_pass;
         begin_pass(cmd, at);
+        pass_paused_for_mesh_conv = false;
+        if (converted && same_open_pass) {
+            pass().sampled_targets |= prev_sampled_targets;
+            pass().written |= prev_written;
+        }
     }
     probe_draw(s, p, pass().draws);   // (hookshot: RX_VK_PROBE)
     gprof_run(cmd, p.key);   // (RX_VK_PASS_TIMING=2)
@@ -7281,19 +7392,20 @@ void draw(VkCommandBuffer cmd, NvnState& s, const DrawArgs& d) {
             }
         }
         if (d.indirect) {
-            BufferRef cnt = d.count_addr ? gpu_buffer_bind(d.count_addr, 4, false) : BufferRef{};
             if (mesh_conv_buf) {   // (EvilOOT: the records as {count, 1, 1}, mesh_indirect_convert)
                 // (hookshot: as many records as mesh_indirect_convert wrote, not the game's maximum)
                 const uint32_t conv_n = (uint32_t)std::clamp(d.max, 1, 4096);
-                if (cnt && vkCmdDrawMeshTasksIndirectCountEXT)
-                    vkCmdDrawMeshTasksIndirectCountEXT(cmd, mesh_conv_buf, mesh_conv_off, cnt.buffer, cnt.offset, conv_n, 12);
+                if (mesh_conv_cnt_buf && vkCmdDrawMeshTasksIndirectCountEXT)
+                    vkCmdDrawMeshTasksIndirectCountEXT(cmd, mesh_conv_buf, mesh_conv_off, mesh_conv_cnt_buf, mesh_conv_cnt_off, conv_n, 12);
                 else
                     vkCmdDrawMeshTasksIndirectEXT(cmd, mesh_conv_buf, mesh_conv_off, conv_n, 12);
                 mesh_conv_buf = VK_NULL_HANDLE;
+                mesh_conv_cnt_buf = VK_NULL_HANDLE;
                 st_mesh++;
                 st_draws++, pass().draws++;
                 return;
             }
+            BufferRef cnt = d.count_addr ? gpu_buffer_bind(d.count_addr, 4, false) : BufferRef{};
             if (d.max < 0 || d.stride < 0) SKIP_HERE();   // (hookshot: the game's ints; a negative count was ~4e9 draws)
             if (!mesh_args.buffer) {
                 mesh_args = gpu_buffer_bind(d.indirect, (uint64_t)std::max(d.max, 1) * std::max(d.stride, 12), false);

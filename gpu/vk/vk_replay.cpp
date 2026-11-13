@@ -62,6 +62,8 @@ extern std::atomic<bool> movie_networks_slow;   // (vk_draw.cpp: the movie netwo
 int64_t presents_now;   // (the presents so far, for SlowWatch)
 void hang_watch_start();   // (EvilOOT, vk_hangdump.cpp: RX_VK_HANG_DUMP)
 void gpu_hang_watch_start();   // (below: a GPU that stops finishing work, reported and ended)
+bool memory_pool_capture_on();   // (vk_memory.cpp: VRAM mirrors on, or RX_VK_CAPTURE=1)
+void memory_shadow_since(uint32_t gen0);   // (vk_memory.cpp: texture shadow for a sync submit stopped at an event wait)
 struct CondNote { int64_t present; uint64_t addr, x, y; int mode; bool on; };   // (the last render conditions, for a dark frame)
 CondNote cond_ring[1 << 15];
 uint32_t cond_ring_at = 0;
@@ -2097,6 +2099,7 @@ bool run_submit(const uint64_t* handles, int n, uint64_t value, uint64_t queue, 
     ReplayPin pin;
     SlowWatch slow("submit");
     PROF(PROF_SUBMIT);
+    const uint32_t gen0 = memory_work ? memory_generation() : 0;
     if (memory_work) {
         if (frame_submits.empty()) frame_first_value = value;
         frame_submits.emplace_back(handles, handles + std::max(n, 0));
@@ -2125,6 +2128,7 @@ bool run_submit(const uint64_t* handles, int n, uint64_t value, uint64_t queue, 
         if (stop) break;
     }
     if (stop) {
+        if (memory_work && !memory_pool_capture_on()) memory_shadow_since(gen0);
         QueueRun& q = qruns[queue];
         q.waiting = true;
         q.handles.assign(handles, handles + n);
@@ -2166,18 +2170,35 @@ void resume_queue(uint64_t queue, bool forced) {
                 std::lock_guard ek(ev_cpu_mu);
                 cpu_event = cpu_events.count(wait_at(q.p).gpu) != 0;
             }
+            uint32_t cpu_gen0 = 0;
             if (cpu_event) {
                 std::lock_guard lk(replay_mu);
                 if (rec_cur) finish_recording(burst_open ? burst_value : q.value);   // (its mirrors synced again after)
-                memory_capture_now(q.value, completed());
+                if (memory_pool_capture_on()) {
+                    memory_capture_now(q.value, completed());
+                } else {
+                    cpu_gen0 = memory_generation();
+                    memory_collect_written();
+                }
                 st_resume_captures++;
             }
             q.waiting = false;
+            if (cpu_event && !memory_pool_capture_on() && oldest_unfinished() != UINT64_MAX) {
+                std::lock_guard lk(replay_mu);
+                memory_shadow_since(cpu_gen0);
+                cpu_event = false;
+            }
             std::vector<uint64_t> handles = std::move(q.handles);
             q.handles.clear();
             const uint8_t* from = forced ? op_next(q.p) : q.p;
             (forced ? st_forced_waits : st_resumed)++;
-            if (!run_submit(handles.data(), (int)handles.size(), q.value, queue, false, q.cb, from, true)) return;
+            if (!run_submit(handles.data(), (int)handles.size(), q.value, queue, false, q.cb, from, true)) {
+                if (cpu_event && !memory_pool_capture_on()) {
+                    std::lock_guard lk(replay_mu);
+                    memory_shadow_since(cpu_gen0);
+                }
+                return;
+            }
             continue;
         }
         if (q.later.empty()) return;
@@ -4809,7 +4830,10 @@ void submit_q(const uint64_t* handles, int n, uint64_t queue) {
         // counted into the other set, and the foliage, grass, characters and particles of that frame were never drawn.
         // With it the syncs take the submits' captures, as the console's GPU sees its memory. RX_VK_SYNC_CAPTURE=0: off.
         static const bool capture = !getenv("RX_VK_SYNC_CAPTURE") || atoi(getenv("RX_VK_SYNC_CAPTURE")) != 0;
-        if (capture) memory_capture_submit();
+        // (without VRAM mirrors (!memory_pool_capture_on()), synchronous replay on the submitting thread reads unified
+        // guest memory directly: capture only while sync_waits_on() has deferred work stopped at an event wait)
+        if (capture && (memory_pool_capture_on() || (sync_waits_on() && oldest_unfinished() != UINT64_MAX)))
+            memory_capture_submit();
         // (RX_VK_SUBMIT_DELAY_US=<us> (a test): a console's GPU starts later than this replay does. Does what a submission reads
         // arrive just after it, from the game's other threads?)
         static const int delay_us = getenv("RX_VK_SUBMIT_DELAY_US") ? atoi(getenv("RX_VK_SUBMIT_DELAY_US")) : 0;

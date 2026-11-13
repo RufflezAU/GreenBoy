@@ -17,8 +17,10 @@
 #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
 #endif
 #include <emmintrin.h>
-#ifdef __EMSCRIPTEN__
+#if !defined(_WIN32)
 #include <sched.h>
+#endif
+#ifdef __EMSCRIPTEN__
 #include <stdatomic.h>
 #include <unistd.h>
 #endif
@@ -1094,18 +1096,43 @@ int64_t hos_now_ns(void) {
 }
 
 static void sleep_ns(int64_t ns, int guest);
+#if !defined(__EMSCRIPTEN__)
+static int physical_cores(void) {
+#if defined(_WIN32)
+    /* (with more than one processor group the list is one group's, not the machine's: not known then) */
+    if (GetActiveProcessorGroupCount() != 1) return 0;
+#endif
+    SYSTEM_LOGICAL_PROCESSOR_INFORMATION stack[256], *info = stack;
+    DWORD len = sizeof stack;
+    if (!GetLogicalProcessorInformation(info, &len)) {
+        if (len <= sizeof stack) return 0;
+        info = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION *)malloc(len);
+        if (!info || !GetLogicalProcessorInformation(info, &len)) {
+            free(info);
+            return 0;
+        }
+    }
+    int cores = 0;
+    for (DWORD i = 0; i < len / sizeof info[0]; i++)
+        if (info[i].Relationship == RelationProcessorCore && info[i].ProcessorMask) cores++;
+    if (info != stack) free(info);
+    return cores;
+}
+#endif
 /* How sleeps under a millisecond wait: 0, all yield until their time; 1, the game's own (SleepThread) wait on the timer,
-   which wakes about 0.5 ms late, and the host's (the frame limiter, the audio renderer) yield; 2, all wait on the timer.
-   asked: the value of HOS_SHORT_SLEEP_TIMER, NULL when it is not set; set, it is read by env_on's rule (on: the timer for
-   all, 2; off: yielding for all, 0). threads: the logical processors this process may run on, 0 when not known. Not set:
-   1 with SHORT_SLEEP_TIMER_THREADS of them or fewer, which is no more than the game's six cores, else 0.
+   which wakes about 0.25-0.5 ms late, and the host's (the frame limiter, the audio renderer) yield; 2, all wait on the
+   timer. asked: the value of HOS_SHORT_SLEEP_TIMER, NULL when it is not set; set, it is read by env_on's rule (on: the
+   timer for all, 2; off: yielding for all, 0). threads: the smaller of the logical processors this process may run on and
+   the machine's physical cores, 0 when neither is known. Not set: 1 with SHORT_SLEEP_TIMER_THREADS of them or fewer,
+   which is no more than the game's six cores (a 4-core / 8-thread Steam Deck, a 6-core desktop, or a desktop held to 4
+   or 6 logical processors), else 0.
    OoT's idle job workers sleep 20 us and look again, about 7,600 times a second, and a yielding loop keeps a processor
-   busy for each: with so few processors that is time the frame's threads need. Measured with the game held to part of a
-   5700X3D: on 4 threads Hyrule Field went from 47 to 51 fps and lost its long frames (over 250 ms in 2 of 4 runs
-   yielding, in none with the timer), Kokiri's worst frame went from 53-422 ms to 30 ms; on 6 the frame rate stayed and a
-   frame's CPU time fell 9 %. On 8 threads and more yielding stays: with the timer for all sleeps there were no long
-   frames either way and Kokiri lost 0.2 fps under its cap, and the timer made TOTK's 20 us waits for its job workers 25x
-   longer, ~2000 a second on the frame's critical path. */
+   busy for each (its virtual core given up first): with so few cores that is time and power the frame and GPU need.
+   Measured with the game held to part of a 5700X3D: on 4 threads Hyrule Field went from 47 to 51 fps and lost its long
+   frames (over 250 ms in 2 of 4 runs yielding, in none with the timer), Kokiri's worst frame went from 53-422 ms to 30 ms;
+   on 6 the frame rate stayed and a frame's CPU time fell 9 %. On 8 cores and more yielding stays: with the timer for all
+   sleeps there were no long frames either way and Kokiri lost 0.2 fps under its cap, and the timer made TOTK's 20 us waits
+   for its job workers 25x longer, ~2000 a second on the frame's critical path. */
 static int hos_short_sleep_timer(const char *asked, int threads) {
     if (asked) return env_value_off(asked) ? 0 : 2;
     return threads > 0 && threads <= SHORT_SLEEP_TIMER_THREADS ? 1 : 0;
@@ -1140,9 +1167,9 @@ static void sleep_away(int64_t ns, int guest) {
 }
 void hos_sleep_ns(int64_t ns) { sleep_away(ns, 0); }
 static void sleep_ns(int64_t ns, int guest) {
-    /* A high-resolution waitable timer (one per thread) sleeps to within ~0.5 ms without spinning; Sleep() rounds to
-       the timer resolution, so without one the last millisecond is spun (threads that sleep in short steps, the
-       vibration thread for one, used 15% of a core spinning). */
+    /* A high-resolution waitable timer (one per thread) sleeps without spinning; Sleep() rounds to the timer resolution,
+       so without one the last millisecond is spun (threads that sleep in short steps, the vibration thread for one, used
+       15% of a core spinning). */
     static _Thread_local HANDLE timer;
     static _Thread_local int tried;
     int64_t until = hos_now_ns() + ns;
@@ -1166,38 +1193,32 @@ static void sleep_ns(int64_t ns, int guest) {
     while (hos_now_ns() < until) sched_yield();
     return;
 #endif
-    /* Under a millisecond: yielded away until the time, or the timer for the game's own sleeps where the processors
-       are few (hos_short_sleep_timer). HOS_SHORT_SLEEP_TIMER=1: the timer always, 0: never, not set: by the processors */
-    /* (the choice, how | the cap << 2: one atomic word, so a thread sees both or neither) */
-    static int choice = -1;
-    int chosen = __atomic_load_n(&choice, __ATOMIC_RELAXED);
-    if (chosen < 0) {
-        const int threads = process_threads();   /* (0 elsewhere than Windows: the timer when asked for) */
-        int how = hos_short_sleep_timer(getenv("HOS_SHORT_SLEEP_TIMER"), threads);
-#if !defined(_WIN32)
-        /* (hookshot) Linux: the game's own sleeps wait on the timer whatever the processors, the host's still yield (1).
-           With #2602, OoT's five idle job workers and sead::MainThread yielded 3.3-3.6 ms a frame each in Hyrule Field
-           (RTX 3090, 7900X, 24 threads), ~9 ms of CPU a frame in all, while one of them waited on a GPU readback. With
-           the timer for all sleeps the frame's CPU fell 44.8 -> 35.4 ms at the same median frame (11.30 / 11.32 ms).
-           The job workers are not on the frame's critical path there (HOS_CHAIN), so their ~0.5 ms later wake costs
-           nothing measured; on 4-8 thread CPUs (the Steam Deck: 8) those yields took processors the frame needs.
-           HOS_SHORT_SLEEP_TIMER=0: all yield, as before; =1: all on the timer */
-        if (!getenv("HOS_SHORT_SLEEP_TIMER")) how = 1;
+    /* Under a millisecond: yielded away until the time, or the timer for the game's own sleeps where the cores are few
+       (hos_short_sleep_timer). HOS_SHORT_SLEEP_TIMER=1: the timer always, 0: never, not set: by the cores */
+    static volatile int short_timer = -1;
+    if (short_timer < 0) {
+        int logical = 0;
+#if defined(_WIN32)
+        /* (with more than one processor group the mask is one group's, not the process's: not known then) */
+        DWORD_PTR proc = 0, sys = 0;
+        if (GetActiveProcessorGroupCount() == 1 && GetProcessAffinityMask(GetCurrentProcess(), &proc, &sys))
+            logical = __builtin_popcountll((uint64_t)proc);
+#else
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        if (sched_getaffinity(0, sizeof set, &set) == 0) logical = CPU_COUNT(&set);
 #endif
+        const int cores = physical_cores();
+        const int threads = logical > 0 && cores > 0 ? (logical < cores ? logical : cores) : logical > 0 ? logical : cores;
+        const int how = hos_short_sleep_timer(getenv("HOS_SHORT_SLEEP_TIMER"), threads);
         /* (the line says what was chosen, before any thread has made its timer: where the high-resolution timer cannot
            be made, Windows before 10 1803, a short sleep falls through to the yield loop at the end and nothing changes) */
         static volatile LONG told;
         if (how && !InterlockedExchange(&told, 1))
-            hos_log("sleep: %s sleeps under a millisecond wait on the timer where the high-resolution one can be made "
-                    "(%d logical processors, 0: not counted; HOS_SHORT_SLEEP_TIMER=0: all yield)",
-                    how == 2 ? "all" : "the game's", threads);
-        /* (HOS_SHORT_SLEEP_TIMER set says how all short sleeps wait: no limit then) */
-        const int cap = how || getenv("HOS_SHORT_SLEEP_TIMER") ? 0 : hos_short_sleep_pollers(getenv("HOS_SHORT_SLEEP_POLLERS"), threads);
-        if (cap && !InterlockedExchange(&told, 1))
-            hos_log("sleep: at most %d of the game's threads yield through a short sleep at a time, the others wait on the "
-                    "timer (%d logical processors; HOS_SHORT_SLEEP_POLLERS=0: all yield)", cap, threads);
-        chosen = how | cap << 2;
-        __atomic_store_n(&choice, chosen, __ATOMIC_RELAXED);
+            hos_log("sleep: %s sleeps under a millisecond wait on the high-resolution timer "
+                    "(%d cores, %d logical processors; HOS_SHORT_SLEEP_TIMER=0: all yield)",
+                    how == 2 ? "all" : "the game's", cores ? cores : threads, logical ? logical : threads);
+        short_timer = how;
     }
     const int short_timer = chosen & 3, poll_cap = chosen >> 2;
     if (ns < 1000000 && short_timer < (guest ? 1 : 2)) {
@@ -1210,13 +1231,40 @@ static void sleep_ns(int64_t ns, int guest) {
         }
         InterlockedDecrement(&short_pollers);   /* (enough of them poll already: the timer, below) */
     }
+    int64_t wait_ns = ns;
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+    /* Windows' high-resolution timer has a ~500 us floor of its own; Linux's clock_nanosleep wakes a 20 us poll after
+       20 us, which across OoT's 11 idle job workers is ~400k hrtimer interrupts and ~800k vc_lock acquisitions a second
+       and keeps Zen 2 cores out of C-states under a 15 W budget. Guest timer sleeps wait at least HOS_GUEST_MIN_SLEEP_US
+       (default 250; 0: as asked) and keep the kernel's 50 us timer slack unless the thread also paces host sleeps. */
+    int hires = !guest;
+    if (guest) {
+        static volatile int64_t guest_min_ns = -1;
+        int64_t min_ns = guest_min_ns;
+        if (min_ns < 0) {
+            const char *e = getenv("HOS_GUEST_MIN_SLEEP_US");
+            const long long us = e && *e ? atoll(e) : 250;
+            min_ns = us <= 0 ? 0 : (us > 10000 ? 10000 : (int64_t)us) * 1000;
+            guest_min_ns = min_ns;
+        }
+        if (wait_ns < min_ns) wait_ns = min_ns;
+        if (!min_ns) hires = 1;
+    }
+    const int want = hires ? 2 : 1;
+    if (tried < want) {
+        if (timer) CloseHandle(timer);
+        tried = want;
+        timer = CreateWaitableTimerExW(NULL, NULL, hires ? CREATE_WAITABLE_TIMER_HIGH_RESOLUTION : 0, TIMER_ALL_ACCESS);
+    }
+#else
     if (!tried) {
         tried = 1;
         timer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
     }
+#endif
     if (timer) {
         LARGE_INTEGER due;
-        due.QuadPart = -(ns / 100 > 0 ? ns / 100 : 1);   /* relative, 100 ns units */
+        due.QuadPart = -(wait_ns / 100 > 0 ? wait_ns / 100 : 1);   /* relative, 100 ns units */
         if (SetWaitableTimerEx(timer, &due, 0, NULL, NULL, NULL, 0)) {
             WaitForSingleObject(timer, INFINITE);
             return;
