@@ -187,9 +187,7 @@ static int local_builder(const wchar_t *file, const wchar_t *dir, wchar_t *out, 
 }
 
 void hos_update_check(void) {
-    /* (hookshot/GreenBoy) opt-in: this used to check unless HOOKSHOT_NO_UPDATE_CHECK said not to, against a
-       repository anyone could re-register. Nothing goes out now unless HOOKSHOT_CHECK_UPSTREAM=1. */
-    if (!getenv("HOOKSHOT_CHECK_UPSTREAM") || !strcmp(getenv("HOOKSHOT_CHECK_UPSTREAM"), "0")) return;
+    if (!getenv("HOOKSHOT_CHECK_UPSTREAM") || !strcmp(getenv("HOOKSHOT_CHECK_UPSTREAM"), "0")) return;   /* (opt-in: the address it used to check was re-registrable) */
     wchar_t dir[MAX_PATH], file[MAX_PATH + 64];
     DWORD n = hos_game_path_w(dir, MAX_PATH);
     if (!n || n >= MAX_PATH) return;
@@ -367,9 +365,8 @@ static int installed_builder(char *out, size_t cap) {
 }
 
 void hos_update_check(void) {
-    /* (hookshot/GreenBoy) opt-in: see the note in the Windows path above */
-    const char *on = getenv("HOOKSHOT_CHECK_UPSTREAM");
-    if (!on || !strcmp(on, "0")) return;
+const char *on = getenv("HOOKSHOT_CHECK_UPSTREAM");
+    if (!on || !strcmp(on, "0")) return;   /* (opt-in) */
     char path[MAX_PATH + 64], have[128], builder[MAX_PATH * 2], skipped[128] = "", tag[128];
     DWORD n = hos_game_path_a(path, MAX_PATH);
     if (!n || n >= MAX_PATH) return;

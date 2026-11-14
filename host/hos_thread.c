@@ -1826,16 +1826,3 @@ int hos_cv_sleep(void *cv, void *lk, unsigned ms) {
     return SleepConditionVariableSRW((PCONDITION_VARIABLE)cv, (PSRWLOCK)lk, ms, 0);
 }
 #endif
-
-/* (hookshot) The spin before a wait sleeps, ns (HOS_SPIN_US, default 20 us). Their tree dropped this
-   with the old sleep policy, but nn_os_sync.c still asks for it, and 20 us is the value we measured:
-   at 1 us the frame was 45.25 -> 44.74 ms, at 20 us 45.25 -> 36.23. */
-int64_t hos_spin_ns(void) {
-    static int64_t ns = -1;
-    if (ns < 0) {
-        const char *e = getenv("HOS_SPIN_US");
-        int64_t us = e ? atoll(e) : 20;
-        ns = (us < 0 ? 0 : us > 1000000 ? 1000000 : us) * 1000;
-    }
-    return ns;
-}

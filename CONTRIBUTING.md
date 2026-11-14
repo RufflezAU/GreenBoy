@@ -33,7 +33,7 @@ break. Claim in Discord #dev-work before you start.
 
 | | What |
 |---|---|
-| **Test on other hardware** | NVIDIA cards are the most tested; the README's [status table](readme.md#project-status) says what works where, and [tested configurations](docs/tested-configurations.md) lists the runs behind it (build, hardware, driver, where, fps). Reports from AMD and Intel cards, other NVIDIA drivers, other distributions and SteamOS are useful even when everything works: add a row there. Pull requests that need a run on your hardware are queued as [test requests](docs/test-requests.md): pick one up, by hand or with an agent. |
+| **Test on other hardware** | NVIDIA cards are the most tested; the README's [status table](readme.md#project-status) says what works where, and [tested configurations](docs/tested-configurations.md) lists the runs behind it (build, hardware, driver, where, fps). Reports from AMD and Intel cards, other NVIDIA drivers, other distributions and SteamOS are useful even when everything works: add a row there. |
 | **Play further** | The tested area is the start of the game. Reaching new areas, cutscenes, menus and items finds problems the developer has not seen. |
 | **Report what is broken** | Use the [issue forms](https://github.com/NotRexed/Hookshot/issues/new/choose): game problem, build problem or idea. Include the version, your hardware, where you were and `hookshot_log.txt`. |
 | **Send a fix** | Fork, fix, test, open a pull request. Small, focused changes are easiest to review and merge. |
@@ -93,21 +93,6 @@ yourself:
 scripts/linux/deps.sh       # LLVM, Python packages, FFmpeg with dav1d, SDL2, Vulkan headers
 scripts/linux/appimage.sh   # the AppImage, in build-linux/
 ```
-
-The scripts expect Ubuntu 22.04, the system CI builds the AppImage in: the AppImage carries that system's C library, so
-the game it builds runs on glibc 2.35 and newer. On another distribution, build it in a container with the same system
-(Docker or Podman, `DOCKER=podman`):
-
-```sh
-scripts/linux/docker.sh             # deps.sh, then appimage.sh, in scripts/linux/Dockerfile's Ubuntu 22.04
-scripts/linux/docker.sh shell       # a shell in that environment, with the checkout at /src
-```
-
-The AppImage lands in `build-linux/` as above. The container keeps its own `build-linux/docker-deps` and
-`build-linux/docker-vk-work`: parts built on the host link against its newer glibc and would not load on older systems.
-The Dockerfile's packages are the workflow's (`tests/test_linux_docker_packages.py` checks that they stay the same).
-Where SELinux is enforcing (Fedora, RHEL), the script runs the container with `--security-opt label=disable`: the
-checkout is not labelled for containers, and relabelling it with `:z` would change it on the host.
 
 The AppImage needs glibc 2.35 or newer and a Vulkan 1.3 driver with mesh shaders. `HOOKSHOT_JOBS` sets how many files
 compile at once. The README's [Linux section](readme.md#on-linux) has the details and the runtime paths.
@@ -284,9 +269,7 @@ the development guide's [reference](docs/development.md#switches-for-testing-and
 5. Include screenshots when the change shows on screen: graphics, the menu, the start-up screen, an overlay, a
    message. Before and after for a fix, the new screen for a feature, and the sizes or settings it was checked at. A
    screenshot of the game is fine; the rule above is about game files, not pictures of the game.
-6. Run the relevant checks. CI must pass; a change that only works on your machine is not ready. CI has no game, so
-   also run the change in the game and put what you measured in the description: before and after on the same
-   scene for a performance change, the bug gone for a fix. An untested change is opened as a draft.
+6. Run the relevant checks. CI must pass; a change that only works on your machine is not ready.
 7. Rebase or merge `main` when it has moved, and resolve conflicts in your branch rather than in the review.
 8. Do not include build output, dumps, generated files or a `.gitignore` bypass. Check `git status`.
 
