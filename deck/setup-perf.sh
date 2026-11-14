@@ -18,6 +18,9 @@
 #          autonomous CPPC dynamic boost mode; governor is set before EPP because governor=performance locks EPP).
 #        - acpi-cpufreq / passive cpufreq: scaling_governor=schedutil when available (falling back to ondemand).
 #      Remove it with: sudo systemctl disable --now hookshot-perf.service
+#   3a. The GPU's own clock policy: Steam leaves power_dpm_force_performance_level=manual on this Deck, which pins one
+#      clock and takes the GPU out of the APU's power sharing. 'auto' lets it clock itself against the same envelope.
+#   3b. Docked only: the power cap the EC allows (29 W) instead of Steam's 15 W. On battery this is left alone.
 #   3. Zero-copy GPU memory sharing (/dev/udmabuf): with it the game's memory reaches RADV as dma-bufs over the game's
 #      own memfd pages. Without it the memory is imported as host pointers, and amdgpu re-validates every page at each
 #      command submission (~1 ms a submission on the Deck, several times a frame). The device normally belongs to root
@@ -48,7 +51,7 @@ After=multi-user.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/sh -c 'for d in /sys/devices/system/cpu/cpu[0-9]*/cpufreq; do [ -d "$d" ] || continue; avail=$(cat "$d/scaling_available_governors" 2>/dev/null || true); drv=$(cat "$d/scaling_driver" 2>/dev/null || true); if [ -e "$d/energy_performance_preference" ] && { [ "$drv" = "amd-pstate-epp" ] || [ "$drv" = "amd_pstate_epp" ] || [ "$drv" = "intel_pstate" ]; }; then echo powersave > "$d/scaling_governor" 2>/dev/null || true; echo balance_performance > "$d/energy_performance_preference" 2>/dev/null || true; elif case " $avail " in *" schedutil "*) true ;; *) false ;; esac; then echo schedutil > "$d/scaling_governor" 2>/dev/null || true; if [ -e "$d/energy_performance_preference" ]; then echo balance_performance > "$d/energy_performance_preference" 2>/dev/null || true; fi; elif [ -e "$d/energy_performance_preference" ] && case " $avail " in *" powersave "*) true ;; *) false ;; esac; then echo powersave > "$d/scaling_governor" 2>/dev/null || true; echo balance_performance > "$d/energy_performance_preference" 2>/dev/null || true; elif case " $avail " in *" ondemand "*) true ;; *) false ;; esac; then echo ondemand > "$d/scaling_governor" 2>/dev/null || true; fi; done'
+ExecStart=/bin/sh -c 'for d in /sys/devices/system/cpu/cpu[0-9]*/cpufreq; do [ -d "$d" ] || continue; avail=$(cat "$d/scaling_available_governors" 2>/dev/null || true); drv=$(cat "$d/scaling_driver" 2>/dev/null || true); if [ -e "$d/energy_performance_preference" ] && { [ "$drv" = "amd-pstate-epp" ] || [ "$drv" = "amd_pstate_epp" ] || [ "$drv" = "intel_pstate" ]; }; then echo powersave > "$d/scaling_governor" 2>/dev/null || true; echo balance_performance > "$d/energy_performance_preference" 2>/dev/null || true; elif case " $avail " in *" schedutil "*) true ;; *) false ;; esac; then echo schedutil > "$d/scaling_governor" 2>/dev/null || true; if [ -e "$d/energy_performance_preference" ]; then echo balance_performance > "$d/energy_performance_preference" 2>/dev/null || true; fi; elif [ -e "$d/energy_performance_preference" ] && case " $avail " in *" powersave "*) true ;; *) false ;; esac; then echo powersave > "$d/scaling_governor" 2>/dev/null || true; echo balance_performance > "$d/energy_performance_preference" 2>/dev/null || true; elif case " $avail " in *" ondemand "*) true ;; *) false ;; esac; then echo ondemand > "$d/scaling_governor" 2>/dev/null || true; fi; done; for g in /sys/class/drm/card*/device; do [ -e "$g/power_dpm_force_performance_level" ] || continue; echo auto > "$g/power_dpm_force_performance_level" 2>/dev/null || true; done; on=$(cat /sys/class/power_supply/*/online 2>/dev/null | grep -c 1); if [ "${on:-0}" -gt 0 ]; then for h in /sys/class/drm/card*/device/hwmon/hwmon*; do [ -e "$h/power1_cap" ] || continue; m=$(cat "$h/power1_cap_max" 2>/dev/null) || continue; [ -n "$m" ] && echo "$m" > "$h/power1_cap" 2>/dev/null || true; done; fi'
 
 [Install]
 WantedBy=multi-user.target
@@ -91,6 +94,11 @@ fi
 if [ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq ] && [ -r /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq ]; then
     echo "   scale (first core): $(( $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq) / 1000 )) MHz requested, ceiling $(( $(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq) / 1000 )) MHz"
 fi
+
+for g in /sys/class/drm/card*/device; do
+    [ -r "$g/power_dpm_force_performance_level" ] && echo "   gpu dpm:   $(cat "$g/power_dpm_force_performance_level")"
+    for h in "$g"/hwmon/hwmon*; do [ -r "$h/power1_cap" ] && echo "   gpu cap:   $(( $(cat "$h/power1_cap") / 1000000 )) W (max $(( $(cat "$h/power1_cap_max" 2>/dev/null || echo 0) / 1000000 )) W)"; done
+done
 
 echo
 echo "done. Log out and back in (or reboot) so the group membership applies, then play."
