@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BENCH = ROOT / "deck" / "bench"
 sys.path.insert(0, str(BENCH))
 import ab  # noqa: E402
+import drift  # noqa: E402
 import frames  # noqa: E402
 import run  # noqa: E402
 
@@ -85,6 +86,18 @@ def check_ab():
     expect(rows[5].count("|") == rows[2].count("|"), "a spec with no runs keeps the columns")
 
 
+def check_drift():
+    ref = {("0xa0", "0xc0"): [0.0078] * 20, ("0xb0", "0x3980"): [5.8e5, 6.1e5, 5.5e5] * 7,
+           ("0xc0", "0x40"): [1.0]}
+    same = {("0xa0", "0xc0"): [0.0079] * 20, ("0xb0", "0x3980"): [6.0e5, 5.6e5] * 10}
+    expect(drift.drifts(ref, same, 4) == [], f"the same values, and a range read once, are no drift: {drift.drifts(ref, same, 4)}")
+    climbing = {("0xa0", "0xc0"): [0.0078 * 1.6 ** i for i in range(20)], ("0xb0", "0x3980"): [5.8e5] * 20}
+    found = drift.drifts(ref, climbing, 4)
+    expect([k for k, _ in found] == [("0xa0", "0xc0")], f"a value that climbs run after run drifts: {found}")
+    gone = drift.drifts(ref, {("0xa0", "0xc0"): [0.0078] * 20}, 4)
+    expect(gone == [], f"a range one run never reads is not compared: {gone}")
+
+
 def check_no_renderer():
     ok = "[hos host] boot: image 96 MB\n[hos MainThread] vk: replay ready (offscreen)\n"
     expect(run.no_renderer(ok) is None, "a renderer that loaded is no failure")
@@ -114,6 +127,7 @@ def main():
     check_stats()
     check_ab()
     check_no_renderer()
+    check_drift()
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
         check_windows(d)

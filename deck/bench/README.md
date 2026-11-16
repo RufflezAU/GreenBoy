@@ -51,6 +51,7 @@ Keep the Deck on its charger: a run draws about 15 W, and `power` in the results
 | `stalls.py <run>...` | each long frame: when, the game's side of it against the present call, and swap-ins, major faults and free memory around it |
 | `run.py ... --sample`, then `threadstate.py <run> <thread regex>` | where a group of threads is in the long frames against the other frames (`RX_MAPS=<variant>/bin` names the frames) |
 | `fold.py <run>/all.txt` | the sampled run as folded stacks for a flame graph (`flamegraph.pl`, or speedscope.app) |
+| `drift.py <reference run> <run>` | the GPU results the game reads back, against a reference run: any whose values leave the reference's (both runs with `--env RX_VK_LOG_READ_VALUES=1`). For a change to how those results reach the game, which a frame rate can't show going wrong |
 | `run.py ... --chain`, then `scripts/chain.py` | the frame's critical path: which thread waited on which |
 
 Sampling costs frame rate (about 19 -> 16 fps on the Deck), so take fps from runs without it and use sampled runs for
