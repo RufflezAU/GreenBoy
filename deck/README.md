@@ -11,6 +11,7 @@ rebuilt. Everything in the renderer and host runtime lives in the main source tr
 | `launcher.sh` | the launcher the Steam shortcut runs. Copies the config in, sets `HOS_GUEST_MEMFD=1` only when safe and needed, sets `ulimit -c 0`, and starts `bin/hookshot` (or `./hookshot`) under `gamemoderun`. |
 | `stable.env` | the environment switches (`hookshot_env.txt` in the game folder) |
 | `stable.ini` | the in-game options (`hookshot_options.ini` in the game folder) |
+| `bench/` | the headless A/B benchmark: builds or switches compared over SSH on a fixed save, with tools for long frames and sampled runs (`bench/README.md`). |
 
 Install: drop `launcher.sh` into the game folder and place `stable.env` and `stable.ini` at `configs/stable.env` and
 `configs/stable.ini` (or point `HOS_CONFIG` at another pair), then run `sudo ./setup-perf.sh` once and log out/in.
