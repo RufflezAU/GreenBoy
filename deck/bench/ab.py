@@ -57,8 +57,12 @@ def main():
     session, rounds, specs = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
     window = os.environ.get("AB_WINDOW", "60")
     results = {spec: [] for spec in specs}
+    failed = set()   # (a spec that failed once is not run again: a broken build fails every round the same way)
     for r in range(rounds):
         for spec in specs if r % 2 == 0 else list(reversed(specs)):
+            if spec in failed:
+                print(f"== round {r}: {spec}: skipped (failed before)", flush=True)
+                continue
             variant, gamemode, envs, label = parse_spec(spec)
             cmd = [sys.executable, "-I", os.path.join(HERE, "run.py"), variant, f"{session}-{r}-{label}",
                    "--window", window] + (["--gamemode"] if gamemode else [])
@@ -70,6 +74,7 @@ def main():
                 res = json.loads(p.stdout.strip().splitlines()[-1])
             except (IndexError, json.JSONDecodeError):
                 print(f"   failed: {(p.stdout + p.stderr).strip()[-300:]}", flush=True)
+                failed.add(spec)
                 continue
             results[spec].append(res)
             print(f"   fps {res.get('fps')}  p50 {res.get('frame_ms_p50')} ms  p99 {res.get('frame_ms_p99')} ms  "

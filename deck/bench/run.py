@@ -32,6 +32,15 @@ GPU = "/sys/class/drm/card0/device"
 
 # The renderer's report every 5 s: "vk: 9600 presents, 18.2 fps; a frame: 2038 draws (...)"
 VK_LINE = re.compile(r"vk: \d+ presents, ([0-9.]+) fps; a frame: (\d+) draws")
+# (the renderer not loaded: the game runs on, drawing nothing, and never reaches the title. A renderer built from
+# another source than the game's says the first; any failed start of it, the second)
+NO_RENDERER = re.compile(r"^.*(?:vk: host version mismatch|rx: mkwvk_init returned NULL).*$", re.M)
+
+
+def no_renderer(log):
+    """The log line saying the renderer did not load, or None"""
+    m = NO_RENDERER.search(log)
+    return m.group(0).strip() if m else None
 REPLAY = re.compile(r"a frame's replay time \(ms\): submit ([0-9.]+)")
 GPU_TIME = re.compile(r"vk: GPU time ([0-9.]+) ms a frame")
 TITLE_MIN_DRAWS = 10   # (the title menu with a save draws 19 a frame)
@@ -127,6 +136,8 @@ class Run:
         while time.time() < end:
             if self.proc.poll() is not None:
                 raise SystemExit(f"game exited ({self.proc.returncode}) while waiting for {what}")
+            if line := no_renderer(self.log()):
+                raise SystemExit(f"the renderer did not load: {line}")
             if predicate():
                 return
             time.sleep(0.5)

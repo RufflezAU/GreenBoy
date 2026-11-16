@@ -16,6 +16,7 @@ BENCH = ROOT / "deck" / "bench"
 sys.path.insert(0, str(BENCH))
 import ab  # noqa: E402
 import frames  # noqa: E402
+import run  # noqa: E402
 
 HEAD = "frame,return_ns,interval_ns,present_begin_ns,renderer_begin_ns,renderer_end_ns,vcore_back_ns"
 MS = 1000000
@@ -84,6 +85,14 @@ def check_ab():
     expect(rows[5].count("|") == rows[2].count("|"), "a spec with no runs keeps the columns")
 
 
+def check_no_renderer():
+    ok = "[hos host] boot: image 96 MB\n[hos MainThread] vk: replay ready (offscreen)\n"
+    expect(run.no_renderer(ok) is None, "a renderer that loaded is no failure")
+    bad = ok + "vk: host version mismatch: host has 18, expected 21\n[hos MainThread] rx: mkwvk_init returned NULL: WebGPU\n"
+    expect(run.no_renderer(bad) == "vk: host version mismatch: host has 18, expected 21",
+           f"a renderer from another source is found by its line: {run.no_renderer(bad)}")
+
+
 def check_stalls(d):
     run = d / "run"
     run.mkdir()
@@ -104,6 +113,7 @@ def check_stalls(d):
 def main():
     check_stats()
     check_ab()
+    check_no_renderer()
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
         check_windows(d)
