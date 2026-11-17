@@ -208,6 +208,11 @@ uint64_t texture_bytes();
 void full_barrier(VkCommandBuffer cmd, const char* why = "barrier (other)");
 /// Full barriers recorded and left out (RX_VK_BARRIER_DEDUPE_OFF=1: none), since the start
 void barrier_stats(int64_t* made, int64_t* left_out);
+/// (hookshot) The game's own nvnCommandBufferBarrier: a full barrier for ORDER_PRIMITIVES and ORDER_INDIRECT_DATA, the fragment
+/// stages only for the rest (its common 0x12, INVALIDATE_TEXTURE | ORDER_FRAGMENTS). RX_VK_GAME_BARRIER=full: all of them full
+void game_barrier(VkCommandBuffer cmd, int32_t bits);
+/// The game's barriers recorded in their fragment stages only, since the start
+int64_t game_barriers_relaxed();
 /// (hookshot) Set around a draw's sampled-texture lookups (vk_draw.cpp): a new ASTC texture there may wait for a later frame
 /// once this frame's uploads passed their budget (texture_touch). Never for compute: a dispatch may bake what it reads once
 extern thread_local bool upload_defer_ok;

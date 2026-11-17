@@ -2342,6 +2342,44 @@ void pass_start_barrier(VkCommandBuffer cmd) {
     last_barrier_cmd = VK_NULL_HANDLE;   // (not a full one: the next full barrier is not left out after it)
 }
 
+namespace { std::atomic<int64_t> st_game_relaxed{0}; }
+int64_t game_barriers_relaxed() { return st_game_relaxed.load(std::memory_order_relaxed); }
+
+// (hookshot) The game's own nvnCommandBufferBarrier. In NVN only ORDER_PRIMITIVES (0x1) and ORDER_INDIRECT_DATA (0x8) order earlier
+// work before later vertex, task or mesh fetch. ORDER_FRAGMENTS (0x2) alone, which the game asks for in its common 0x12 together with
+// INVALIDATE_TEXTURE, orders later fragments and nothing else: NVN does not order the next pass's primitive work after it either. So
+// those bits keep the full barrier and the rest wait in the fragment stages only. Its own count: 0x12 came 69 times a frame and 0x11
+// (ORDER_PRIMITIVES) 59, so this relaxes just under half of them. RX_VK_GAME_BARRIER=full: every one of them full, as before.
+void game_barrier(VkCommandBuffer cmd, int32_t bits) {
+    // OFF BY DEFAULT: measured on this Deck it is slower. 61.5 of the game's barriers a frame went to the fragment stages only
+    // (from 0x12, 69 a frame) as designed, and the replay's median went 13.09 -> 13.68 ms with p95 13.39 -> 14.11: on RADV a
+    // fragment-only barrier does not pay for itself, and one in the middle of a run stops the next full barrier being left out.
+    // RX_VK_GAME_BARRIER=fragments: try it again on a driver where it might.
+    static const bool relax = [] {
+        const char* e = getenv("RX_VK_GAME_BARRIER");
+        const bool r = e && !strcmp(e, "fragments");
+        if (r) logf("vk: RX_VK_GAME_BARRIER=fragments: the game's barriers without ORDER_PRIMITIVES or ORDER_INDIRECT_DATA wait in their fragment stages only");
+        return r;
+    }();
+    if (!relax || (bits & 0x9) != 0 || par_active.load(std::memory_order_relaxed)) {
+        full_barrier(cmd, "barrier (the game's nvnCommandBufferBarrier)");
+        return;
+    }
+    st_game_relaxed.fetch_add(1, std::memory_order_relaxed);
+    GprofSpan gp(cmd, "barrier (the game's, fragments)");
+    VkMemoryBarrier2 b{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    b.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    b.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                     VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    b.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    VkDependencyInfo d{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    d.memoryBarrierCount = 1;
+    d.pMemoryBarriers = &b;
+    vkCmdPipelineBarrier2(cmd, &d);
+    last_barrier_cmd = VK_NULL_HANDLE;   // (not a full one: the next full barrier is not left out after it)
+}
+
 void texture_begin_recording(VkCommandBuffer upload, uint64_t value) {
     last_barrier_cmd = VK_NULL_HANDLE;
     last_pass_end_cmd = VK_NULL_HANDLE;   // (a new recording: its command buffers start afresh, whatever their handles held)

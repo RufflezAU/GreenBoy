@@ -7,6 +7,7 @@
 // on the render thread, in the first frame). The table of pools is cheap to keep current (host->gpu_pools: two
 // numbers each) and is refreshed when its generation changes, at a submit.
 #include <cstring>
+#include <utility>   // (std::exchange)
 #include <algorithm>
 #include <array>
 #include <chrono>

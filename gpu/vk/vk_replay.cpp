@@ -1217,17 +1217,18 @@ void replay(VkCommandBuffer& cmd, NvnState& s, const uint8_t* p, const uint8_t* 
             }
             break;
         }
-        case NOP_BARRIER:
+        case NOP_BARRIER: {
             if (dry) break;
+            const int32_t bits = payload<int32_t>(a, avail);
             {
-                const int32_t bits = payload<int32_t>(a, avail);
                 std::lock_guard lk(st_barrier_flags_mu);
                 st_barrier_flags[bits]++;
             }
             end_pass(cmd);
-            full_barrier(cmd, "barrier (the game's nvnCommandBufferBarrier)");
+            game_barrier(cmd, bits);
             st_barriers++;
             break;
+        }
         // ---- work ----
         case NOP_CLEAR_COLOR:
             // (hookshot) in the dry pass a clear marks its pass's targets as the GPU's, as a draw does (dry_mark_written): the clear
@@ -2987,11 +2988,17 @@ void log_frame_stats() {
             static int64_t l_made, l_left;
             int64_t made = 0, left = 0;
             barrier_stats(&made, &left);
-            static int64_t l_relaxed;
+            static int64_t l_relaxed, l_grelaxed;
             const int64_t relaxed = pass_barriers_relaxed();
+            const int64_t grelaxed = game_barriers_relaxed();
+            char gameplay[96];
+            snprintf(gameplay, sizeof gameplay, "%.1f of the game's in their fragment stages only",
+                     (grelaxed - l_grelaxed) / 120.0);
+            const std::string game_line = gameplay;
+            l_grelaxed = grelaxed;
             logf("vk: a frame: %.1f full barriers recorded, %.1f left out (nothing recorded since the one before), %.1f pass starts "
-                 "ordered in their fragment stages only (RX_VK_PASS_BARRIER=game)", (made - l_made) / 120.0, (left - l_left) / 120.0,
-                 (relaxed - l_relaxed) / 120.0);
+                 "ordered in their fragment stages only (RX_VK_PASS_BARRIER=game); %s", (made - l_made) / 120.0,
+                 (left - l_left) / 120.0, (relaxed - l_relaxed) / 120.0, game_line.c_str());
             l_made = made, l_left = left, l_relaxed = relaxed;
             std::string fl;   // (NVN's barrier bits: ORDER_PRIMITIVES 1, ORDER_FRAGMENTS 2, ORDER_FRAGMENTS_TILED 4, ORDER_INDIRECT_DATA 8, INVALIDATE_TEXTURE 0x10, _SHADER 0x20, _TEXTURE_DESCRIPTOR 0x40, _ZCULL 0x80)
             std::lock_guard lk(st_barrier_flags_mu);
